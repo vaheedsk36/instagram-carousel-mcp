@@ -14,13 +14,56 @@ Supported templates and their fields:
   stat     value,    label?,   caption?
   cta      eyebrow?, heading,  body?, button?, handle?
 
+Images:
+  background_image  any slide — a full-bleed photo behind the content, with an
+                    automatic dark scrim so text stays readable (text switches
+                    to light automatically). Value: file path, URL, or data URI.
+  image             on the `content` template — an inline image card shown
+                    between the heading and the body text.
+
 Common optional fields on every slide: ``page`` (bool, show "n / total"),
 ``handle`` (e.g. "@yourbrand"). Sizes are chosen for a 1080px-wide canvas and
 scale with the canvas height.
 """
 from __future__ import annotations
 
+import base64
+import mimetypes
+import urllib.request
+from dataclasses import replace
+from pathlib import Path
+
 from .themes import Theme
+
+# Where relative image paths are resolved from (project root).
+_ROOT = Path(__file__).parent.parent
+
+
+def to_data_uri(src: str | None) -> str | None:
+    """Resolve an image reference to a base64 data URI so it embeds in the SVG.
+
+    Accepts an existing data URI, an http(s) URL (fetched), an absolute path, or
+    a path relative to the project root. Returns None for falsy input.
+    """
+    if not src:
+        return None
+    if src.startswith("data:"):
+        return src
+    if src.startswith(("http://", "https://")):
+        req = urllib.request.Request(src, headers={"User-Agent": "carousel/1.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = r.read()
+            mime = r.headers.get_content_type() or "image/jpeg"
+        return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+    p = Path(src).expanduser()
+    if not p.is_absolute():
+        p = (_ROOT / src).resolve()
+    if not p.exists():
+        raise ValueError(f"Image not found: {src} (looked at {p})")
+    mime = mimetypes.guess_type(str(p))[0] or "image/png"
+    if p.suffix.lower() == ".svg":
+        mime = "image/svg+xml"
+    return f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode('ascii')}"
 
 # Canvas presets (width, height) in pixels — Instagram-friendly aspect ratios.
 SIZES: dict[str, tuple[int, int]] = {
@@ -163,6 +206,20 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
     inner_w = W - 2 * PAD
     body: list[str] = []
 
+    # Full-bleed background photo: embed, add a dark scrim, and switch text to
+    # light so any template stays readable on top of the image.
+    bg_uri = to_data_uri(slide.get("background_image"))
+    bg_layer = ""
+    if bg_uri:
+        theme = replace(theme, text="#ffffff", muted="rgba(255,255,255,0.85)")
+        bg_layer = (
+            f'<image x="0" y="0" width="{W}" height="{H}" '
+            f'preserveAspectRatio="xMidYMid slice" href="{bg_uri}"/>'
+            f'<rect width="{W}" height="{H}" fill="#000000" opacity="0.45"/>'
+            f'<rect x="0" y="{H*0.45:.0f}" width="{W}" height="{H*0.55:.0f}" '
+            f'fill="url(#scrim{index})"/>'
+        )
+
     if template == "title":
         # Vertically centred hero.
         head_lines = wrap_text(slide.get("heading", ""), 92, inner_w, 0.58)
@@ -288,19 +345,41 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
         svg, bottom = _text_lines(head_lines, PAD, y, size=64, fill=theme.text,
                                   weight=800, family=theme.font_sans, line_height=1.12)
         body.append(svg)
-        body.append(f'<rect x="{PAD}" y="{bottom + 44}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
+        img_uri = to_data_uri(slide.get("image"))
+        if img_uri:
+            # Rounded image card between heading and body.
+            iy = bottom + 56
+            ih = min(560, H - iy - PAD - 220)
+            body.append(
+                f'<clipPath id="imgclip{index}"><rect x="{PAD}" y="{iy:.0f}" '
+                f'width="{inner_w}" height="{ih:.0f}" rx="28"/></clipPath>'
+                f'<image x="{PAD}" y="{iy:.0f}" width="{inner_w}" height="{ih:.0f}" '
+                f'preserveAspectRatio="xMidYMid slice" clip-path="url(#imgclip{index})" '
+                f'href="{img_uri}"/>'
+            )
+            text_top = iy + ih + 64
+        else:
+            body.append(f'<rect x="{PAD}" y="{bottom + 44}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
+            text_top = bottom + 130
         if slide.get("body"):
             b_lines = wrap_text(slide["body"], 40, inner_w)
-            svg, _ = _text_lines(b_lines, PAD, bottom + 130, size=40, fill=theme.text,
+            svg, _ = _text_lines(b_lines, PAD, text_top, size=40, fill=theme.text,
                                  weight=400, family=theme.font_sans, line_height=1.42)
             body.append(svg)
 
     defs = _gradient_defs(theme, grad_id)
+    if bg_uri:
+        defs += (
+            f'<linearGradient id="scrim{index}" x1="0" y1="0" x2="0" y2="1">'
+            f'<stop offset="0%" stop-color="#000000" stop-opacity="0"/>'
+            f'<stop offset="100%" stop-color="#000000" stop-opacity="0.65"/>'
+            f"</linearGradient>"
+        )
     footer = _footer(slide, theme, W, H, index, total)
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
         f'viewBox="0 0 {W} {H}" font-family="{theme.font_sans}">'
         f"<defs>{defs}</defs>"
         f'<rect width="{W}" height="{H}" fill="{_bg_fill(theme, grad_id)}"/>'
-        f"{''.join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>"
+        f"{bg_layer}{''.join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>"
     )

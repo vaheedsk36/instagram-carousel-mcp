@@ -125,6 +125,11 @@ def create_carousel(
               quote:   quote, author?, role?
               stat:    value, label?, caption?
               cta:     eyebrow?, heading, body?, button?, handle?
+            Images:
+              background_image: any slide — full-bleed photo behind the content
+                  (text auto-switches to light + a scrim keeps it readable).
+              image:    on `content` — inline rounded image card above the body.
+            Image values may be a local file path, an http(s) URL, or a data URI.
             Optional on any slide: handle (e.g. "@brand"), page (bool, show n/total).
         title: human title (also used for the output folder name).
         theme: theme name (see list_themes). If a brand is given, omit this to

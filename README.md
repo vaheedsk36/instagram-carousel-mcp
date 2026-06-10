@@ -39,6 +39,28 @@ cta      eyebrow?, heading,  body?, button?, handle?
 ```
 Any slide also accepts `handle` (e.g. `@brand`) and `page` (bool — show `n/total`).
 
+### Images
+
+Slides aren't text-only — you can add photos:
+
+- **`background_image`** (any slide): a full-bleed photo behind the content. Text
+  automatically switches to light and a gradient scrim is added so it stays
+  readable on top of the image.
+- **`image`** (on the `content` template): an inline rounded image card shown
+  between the heading and the body text.
+
+Image values can be a **local file path**, an **http(s) URL** (downloaded), or a
+**data URI** — all are base64-embedded into the slide so exported PNGs are
+self-contained. Drop files in `assets/` and reference them by path:
+
+```jsonc
+{ "template": "title", "heading": "2026 Report",
+  "background_image": "assets/cover.jpg" }
+{ "template": "content", "heading": "Hybrid is winning",
+  "image": "https://example.com/chart.png",
+  "body": "58% of teams now run hybrid — up from 41% last year." }
+```
+
 ## Brand your page (theme + logo)
 
 Save a brand profile once, then pass `brand: "<name>"` to `create_carousel` and
