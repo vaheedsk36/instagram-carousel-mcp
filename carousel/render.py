@@ -39,6 +39,21 @@ from .themes import Theme
 _ROOT = Path(__file__).parent.parent
 
 
+def _sourced_uri(query: str, w: int, h: int) -> str | None:
+    """Auto-source an image for a text query and return it as a data URI.
+
+    Network/provider failures are swallowed (returns None) so a missing image
+    never breaks the whole carousel.
+    """
+    try:
+        from . import images
+        return to_data_uri(str(images.get_image_path(query, w, h)))
+    except Exception as e:  # noqa: BLE001
+        import sys
+        print(f"[render] image source failed for {query!r}: {e}", file=sys.stderr)
+        return None
+
+
 def to_data_uri(src: str | None) -> str | None:
     """Resolve an image reference to a base64 data URI so it embeds in the SVG.
 
@@ -209,6 +224,8 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
     # Full-bleed background photo: embed, add a dark scrim, and switch text to
     # light so any template stays readable on top of the image.
     bg_uri = to_data_uri(slide.get("background_image"))
+    if not bg_uri and slide.get("background_query"):
+        bg_uri = _sourced_uri(slide["background_query"], W, H)
     bg_layer = ""
     if bg_uri:
         theme = replace(theme, text="#ffffff", muted="rgba(255,255,255,0.85)")
@@ -346,6 +363,8 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
                                   weight=800, family=theme.font_sans, line_height=1.12)
         body.append(svg)
         img_uri = to_data_uri(slide.get("image"))
+        if not img_uri and slide.get("image_query"):
+            img_uri = _sourced_uri(slide["image_query"], 1200, 800)
         if img_uri:
             # Rounded image card between heading and body.
             iy = bottom + 56

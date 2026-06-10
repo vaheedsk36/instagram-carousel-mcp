@@ -49,9 +49,25 @@ Slides aren't text-only — you can add photos:
 - **`image`** (on the `content` template): an inline rounded image card shown
   between the heading and the body text.
 
-Image values can be a **local file path**, an **http(s) URL** (downloaded), or a
-**data URI** — all are base64-embedded into the slide so exported PNGs are
-self-contained. Drop files in `assets/` and reference them by path:
+You don't have to supply files at all — use **`background_query`** / **`image_query`**
+with a text description and the server auto-sources a fitting image, trying in
+order: **Replicate/Flux** (AI, needs `REPLICATE_API_TOKEN`) → **Pexels** (stock,
+needs `PEXELS_API_KEY`) → **Openverse** (free CC photos, no key) → **Picsum**
+(random, guaranteed). Results cache under `assets/cache/`. Override the order
+with `IMAGE_PROVIDER_ORDER`. So image-sourcing works with zero setup (real
+photos) and upgrades to custom AI art once a Replicate token is present.
+
+```jsonc
+{ "template": "title", "heading": "The State of Remote Work",
+  "background_query": "minimal home office, soft morning light" }
+{ "template": "content", "heading": "Hybrid is winning",
+  "image_query": "team collaborating in a bright office",
+  "body": "58% of teams now run hybrid." }
+```
+
+Or supply images explicitly: `background_image` / `image` values can be a
+**local file path**, an **http(s) URL** (downloaded), or a **data URI** — all
+base64-embedded so exported PNGs are self-contained. Drop files in `assets/`:
 
 ```jsonc
 { "template": "title", "heading": "2026 Report",
