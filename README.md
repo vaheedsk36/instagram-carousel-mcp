@@ -127,7 +127,7 @@ create_carousel(
 
 `create_carousel` returns a `preview_url` served by the MCP server itself
 (e.g. `http://127.0.0.1:<port>/<carousel-id>/`). Open it in any browser for the
-full interactive carousel + **Download all PNGs** button.
+full interactive carousel + **Download all (ZIP)** button.
 
 **In the Claude Code desktop app**, the Preview tool reads
 `~/.claude/launch.json`. The included `carousel-preview` config serves a
@@ -137,8 +137,10 @@ preview. (Claude can do this for you on request.)
 
 ## Exporting PNGs
 
-- **Easiest:** click **Download all PNGs** in the live preview — rasterises in
-  the browser, zero setup.
+- **Easiest:** click **Download all (ZIP)** in the live preview — rasterises all
+  slides in the browser and bundles them into one ZIP (a single download, so the
+  browser's multi-download block never trips). Zero setup. "Download this slide
+  (PNG)" grabs just the current one.
 - **Headless / programmatic:** `export_png`. One-time setup:
   ```
   ./.venv/bin/python -m pip install playwright

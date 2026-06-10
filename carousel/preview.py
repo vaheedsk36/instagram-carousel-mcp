@@ -145,7 +145,7 @@ _INDEX_HTML = r"""<!doctype html>
   <div class="bar">
     <span class="counter" id="counter">1 / 1</span>
     <button class="btn" id="dlOne">Download this slide (PNG)</button>
-    <button class="btn primary" id="dlAll">Download all PNGs</button>
+    <button class="btn primary" id="dlAll">Download all (ZIP)</button>
   </div>
   <div class="caption empty" id="caption">
     <div class="caption-head"><span>Caption</span><button class="btn" id="copyCap">Copy</button></div>
@@ -241,11 +241,53 @@ document.getElementById('dlOne').onclick = async () => {
   const blob = await svgToPng(M.slides[idx], M.width, M.height);
   download(blob, `slide-${idx + 1}.png`);
 };
+// CRC32 + a minimal store-only ZIP so all slides come down as one file
+// (browsers block multiple sequential downloads from a single click).
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+function makeZip(files) {
+  const enc = new TextEncoder(), chunks = [], central = []; let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), crc = crc32(f.data), n = f.data.length;
+    const lh = new Uint8Array(30 + name.length), dv = new DataView(lh.buffer);
+    dv.setUint32(0, 0x04034b50, true); dv.setUint16(4, 20, true); dv.setUint16(6, 0, true);
+    dv.setUint16(8, 0, true); dv.setUint16(10, 0, true); dv.setUint16(12, 0, true);
+    dv.setUint32(14, crc, true); dv.setUint32(18, n, true); dv.setUint32(22, n, true);
+    dv.setUint16(26, name.length, true); dv.setUint16(28, 0, true); lh.set(name, 30);
+    chunks.push(lh, f.data);
+    const ch = new Uint8Array(46 + name.length), cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true); cv.setUint16(10, 0, true); cv.setUint16(12, 0, true); cv.setUint16(14, 0, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, n, true); cv.setUint32(24, n, true);
+    cv.setUint16(28, name.length, true); cv.setUint32(42, offset, true); ch.set(name, 46);
+    central.push(ch); offset += lh.length + n;
+  }
+  let cdSize = 0; for (const c of central) cdSize += c.length;
+  const end = new Uint8Array(22), ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+  ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
+  return new Blob([...chunks, ...central, end], { type: 'application/zip' });
+}
+
 document.getElementById('dlAll').onclick = async () => {
-  for (let i = 0; i < M.count; i++) {
-    const blob = await svgToPng(M.slides[i], M.width, M.height);
-    download(blob, `slide-${i + 1}.png`);
-    await new Promise(r => setTimeout(r, 300));
+  const btn = document.getElementById('dlAll'), label = btn.textContent;
+  btn.disabled = true;
+  const slug = (M.title || 'carousel').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'carousel';
+  try {
+    const files = [];
+    for (let i = 0; i < M.count; i++) {
+      btn.textContent = `Building ${i + 1}/${M.count}…`;
+      const blob = await svgToPng(M.slides[i], M.width, M.height);
+      files.push({ name: `${slug}-${i + 1}.png`, data: new Uint8Array(await blob.arrayBuffer()) });
+    }
+    download(makeZip(files), `${slug}.zip`);
+  } finally {
+    btn.textContent = label; btn.disabled = false;
   }
 };
 
