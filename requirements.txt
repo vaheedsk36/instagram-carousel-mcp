@@ -1,0 +1,4 @@
+mcp[cli]>=1.2.0
+# Optional — only needed for server-side PNG export (export_png tool).
+# The live preview's "Download all PNGs" works without it.
+# playwright>=1.40

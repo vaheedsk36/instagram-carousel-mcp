@@ -19,9 +19,11 @@ upload. Pure-Python, no system image libraries required.
 | Tool | Purpose |
 |------|---------|
 | `list_themes` | List available themes with colours. |
-| `create_carousel` | Build a carousel from slide specs; writes SVGs + preview. Returns `preview_url`. |
+| `create_carousel` | Build a carousel from slide specs; writes SVGs + preview. Accepts `brand`, `caption`, `hashtags`. Returns `preview_url`. |
 | `update_slide` | Replace one slide (by index) and re-render. |
 | `add_slide` | Insert/append a slide. |
+| `save_brand` | Create/update a brand profile (handle, logo, custom theme, default hashtags). |
+| `list_brands` | List saved brand profiles. |
 | `get_preview_url` | Get the live preview URL for an existing carousel. |
 | `export_png` | Server-side PNG export (optional; needs Playwright). |
 
@@ -36,6 +38,52 @@ stat     value,    label?,   caption?
 cta      eyebrow?, heading,  body?, button?, handle?
 ```
 Any slide also accepts `handle` (e.g. `@brand`) and `page` (bool — show `n/total`).
+
+## Brand your page (theme + logo)
+
+Save a brand profile once, then pass `brand: "<name>"` to `create_carousel` and
+every slide gets your colours, logo, @handle, and default hashtags.
+
+```jsonc
+// save_brand({ profile: { ... } })  -> brands/mypage.json
+{
+  "name": "mypage",
+  "handle": "@mypage",
+  "logo": "mypage-logo.png",          // path; absolute, or relative to brands/
+  "base_theme": "midnight",           // theme to extend
+  "theme": {                          // override only what you want
+    "accent": "#f472b6",
+    "bg": ["#1e1b4b", "#312e81"]      // "#hex" solid, or ["#a","#b"] gradient
+  },
+  "default_hashtags": ["#buildinpublic", "#startup"],
+  "caption_signature": "Follow @mypage 🚀",
+  "default_size": "portrait"
+}
+```
+
+- **Logo:** any PNG/JPG/SVG. It's base64-embedded into each slide (top-left), so
+  exported PNGs are fully self-contained. Drop your logo in `brands/` (or give an
+  absolute path) and set `logo` to it.
+- **Theme:** start from a built-in `base_theme` and override any of `accent`,
+  `bg`, `bg_angle`, `text`, `muted`, `accent_fg`, `font_sans`, `font_serif`.
+- Profiles are JSON in `brands/`, so they commit to the repo and sync across
+  devices.
+
+## Captions & hashtags
+
+`create_carousel` (and a follow-up) take `caption` and `hashtags`. The final
+post text is assembled as **caption → brand signature → merged hashtags**
+(per-call + brand defaults, deduped), written to `caption.txt`, and shown in the
+live preview with a **Copy** button — paste straight into Instagram.
+
+```
+create_carousel(
+  slides=[...],
+  brand="mypage",
+  caption="Speed compounds. Here are 5 moves that cut our cycle time in half.",
+  hashtags=["#shipfast", "#engineering"],
+)
+```
 
 ## Viewing the output interactively
 
@@ -59,25 +107,47 @@ preview. (Claude can do this for you on request.)
   ./.venv/bin/python -m playwright install chromium
   ```
 
-## Registering the server
+## Run it on another device
 
-Already registered at user scope via:
+Prerequisites: **Python 3.10+** and the **`claude`** CLI on PATH.
+
+```bash
+git clone https://github.com/vaheedsk36/instagram-carousel-mcp.git
+cd instagram-carousel-mcp
+./setup.sh           # creates .venv, installs deps, registers the MCP server
 ```
+
+`setup.sh` registers the server at user scope so it's available in every Claude
+Code session on that machine. Verify with `claude mcp list | grep carousel`.
+Your brand profiles travel with the repo (they live in `brands/`), so the same
+look is available everywhere.
+
+Manual equivalent if you'd rather not run the script:
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
 claude mcp add instagram-carousel --scope user -- \
-  /Users/vaheedsk36/instagram-carousel-mcp/.venv/bin/python \
-  /Users/vaheedsk36/instagram-carousel-mcp/server.py
+  "$(pwd)/.venv/bin/python" "$(pwd)/server.py"
 ```
+
+> Note: the `.venv` is machine-specific and git-ignored — always recreate it per
+> device. Only the source and `brands/` profiles are committed.
 
 ## Project layout
 
 ```
 server.py              MCP server (FastMCP) — the tools
-carousel/themes.py     theme palettes + fonts
-carousel/render.py     slide spec -> SVG (with text wrapping & templates)
-carousel/preview.py    background HTTP preview server + viewer HTML
+carousel/themes.py     theme palettes + custom-theme builder
+carousel/brand.py      brand profiles (handle, logo, theme, hashtags) + caption assembly
+carousel/render.py     slide spec -> SVG (text wrapping, templates, logo embedding)
+carousel/preview.py    background HTTP preview server + viewer HTML (caption + copy)
 carousel/export.py     optional Playwright SVG->PNG
-output/<id>/           generated slides, manifest, preview, spec
+brands/                saved brand profiles (committed; sync across devices)
+output/<id>/           generated slides, manifest, preview, caption.txt, spec
+setup.sh               one-shot setup for a fresh machine
+requirements.txt       Python dependencies
 test_render.py         smoke test covering all templates
+test_brand.py          smoke test for brand + logo + caption
 ```
 
 ## Note on this machine

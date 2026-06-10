@@ -114,6 +114,39 @@ def get_theme(name: str) -> Theme:
     return THEMES[key]
 
 
+def custom_theme(spec: dict, base: str = "midnight") -> Theme:
+    """Build a Theme from a partial dict, falling back to `base` for any
+    missing field. Lets a brand define just its colours (e.g. accent + bg)
+    without restating everything.
+
+    `bg` may be a single hex string (solid), a list of hex strings (gradient),
+    or a list of (offset, hex) pairs.
+    """
+    b = get_theme(base)
+    bg = spec.get("bg")
+    if bg is None:
+        bg_stops = b.bg
+    elif isinstance(bg, str):
+        bg_stops = [(0.0, bg)]
+    elif bg and isinstance(bg[0], str):
+        n = len(bg)
+        bg_stops = [(i / (n - 1) if n > 1 else 0.0, c) for i, c in enumerate(bg)]
+    else:
+        bg_stops = [(float(o), c) for o, c in bg]
+    return Theme(
+        name=spec.get("name", "custom"),
+        bg=bg_stops,
+        bg_angle=int(spec.get("bg_angle", b.bg_angle)),
+        text=spec.get("text", b.text),
+        muted=spec.get("muted", b.muted),
+        accent=spec.get("accent", b.accent),
+        accent_fg=spec.get("accent_fg", b.accent_fg),
+        font_sans=spec.get("font_sans", b.font_sans),
+        font_serif=spec.get("font_serif", b.font_serif),
+        description=spec.get("description", "Custom brand theme"),
+    )
+
+
 def list_themes() -> list[dict]:
     return [
         {

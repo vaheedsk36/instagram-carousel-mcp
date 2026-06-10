@@ -1,0 +1,19 @@
+{
+  "name": "buildnotes",
+  "handle": "@buildnotes",
+  "logo": "_demo_logo.svg",
+  "base_theme": "midnight",
+  "theme": {
+    "accent": "#f472b6",
+    "bg": [
+      "#1e1b4b",
+      "#312e81"
+    ]
+  },
+  "default_hashtags": [
+    "#buildinpublic",
+    "#startup",
+    "#devtips"
+  ],
+  "caption_signature": "Follow @buildnotes for a build tip every day \ud83d\ude80"
+}

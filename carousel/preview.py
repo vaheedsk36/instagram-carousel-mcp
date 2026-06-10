@@ -57,7 +57,8 @@ class PreviewServer:
         return f"http://127.0.0.1:{self.port}/{carousel_id}/"
 
 
-def write_manifest(carousel_dir: Path, title: str, size: str, dims: tuple[int, int], slides: list[dict]) -> None:
+def write_manifest(carousel_dir: Path, title: str, size: str, dims: tuple[int, int],
+                   slides: list[dict], caption: str = "") -> None:
     manifest = {
         "title": title,
         "size": size,
@@ -66,6 +67,7 @@ def write_manifest(carousel_dir: Path, title: str, size: str, dims: tuple[int, i
         "count": len(slides),
         "slides": [f"slide-{i}.svg" for i in range(len(slides))],
         "specs": slides,
+        "caption": caption,
     }
     (carousel_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
@@ -121,6 +123,14 @@ _INDEX_HTML = r"""<!doctype html>
   .btn:hover { background: #334155; }
   .btn.primary { background: #38bdf8; color: #0b0d12; border-color: #38bdf8; }
   .counter { font-variant-numeric: tabular-nums; color: #94a3b8; font-size: 13px; min-width: 54px; text-align: center; }
+  .caption {
+    width: min(92vw, 560px); background: #11151c; border: 1px solid #1f2937;
+    border-radius: 14px; padding: 16px 18px; margin-top: 6px;
+  }
+  .caption-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .caption-head span { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #64748b; font-weight: 700; }
+  .caption pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 14px; line-height: 1.5; color: #cbd5e1; }
+  .caption.empty { display: none; }
 </style>
 </head>
 <body>
@@ -137,6 +147,10 @@ _INDEX_HTML = r"""<!doctype html>
     <button class="btn" id="dlOne">Download this slide (PNG)</button>
     <button class="btn primary" id="dlAll">Download all PNGs</button>
   </div>
+  <div class="caption empty" id="caption">
+    <div class="caption-head"><span>Caption</span><button class="btn" id="copyCap">Copy</button></div>
+    <pre id="captionText"></pre>
+  </div>
 
 <script>
 let M, idx = 0;
@@ -148,6 +162,14 @@ async function load() {
     `${M.count} slides · ${M.width}×${M.height} · ${M.size}`;
   const ratio = M.width / M.height;
   document.querySelector('.frame').style.width = `calc(min(72vh, 760px) * ${ratio})`;
+
+  const cap = document.getElementById('caption');
+  if (M.caption && M.caption.trim()) {
+    document.getElementById('captionText').textContent = M.caption;
+    cap.classList.remove('empty');
+  } else {
+    cap.classList.add('empty');
+  }
 
   const track = document.getElementById('track');
   const dots = document.getElementById('dots');
@@ -225,6 +247,13 @@ document.getElementById('dlAll').onclick = async () => {
     download(blob, `slide-${i + 1}.png`);
     await new Promise(r => setTimeout(r, 300));
   }
+};
+
+document.getElementById('copyCap').onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById('captionText').textContent);
+  const b = document.getElementById('copyCap');
+  b.textContent = 'Copied ✓';
+  setTimeout(() => b.textContent = 'Copy', 1500);
 };
 
 load();

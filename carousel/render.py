@@ -146,7 +146,18 @@ def _eyebrow(slide: dict, theme: Theme, y: float) -> tuple[str, float]:
     return svg, bottom + 56
 
 
-def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: int) -> str:
+def _logo_svg(logo_data_uri: str | None) -> str:
+    if not logo_data_uri:
+        return ""
+    # Top-left brand mark, scaled to fit a 240x64 box preserving aspect ratio.
+    return (
+        f'<image x="{PAD}" y="{PAD}" width="240" height="64" '
+        f'preserveAspectRatio="xMinYMin meet" href="{logo_data_uri}"/>'
+    )
+
+
+def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: int,
+                 logo_data_uri: str | None = None) -> str:
     template = (slide.get("template") or "content").lower()
     grad_id = f"bg{index}"
     inner_w = W - 2 * PAD
@@ -215,7 +226,7 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             body.append(svg)
 
     elif template == "list":
-        eb, y = _eyebrow(slide, theme, PAD + 30)
+        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0))
         body.append(eb)
         head_lines = wrap_text(slide.get("heading", ""), 64, inner_w, 0.57)
         svg, bottom = _text_lines(head_lines, PAD, y, size=64, fill=theme.text,
@@ -271,7 +282,7 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             )
 
     else:  # "content" (default)
-        eb, y = _eyebrow(slide, theme, PAD + 30)
+        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0))
         body.append(eb)
         head_lines = wrap_text(slide.get("heading", ""), 64, inner_w, 0.57)
         svg, bottom = _text_lines(head_lines, PAD, y, size=64, fill=theme.text,
@@ -291,5 +302,5 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
         f'viewBox="0 0 {W} {H}" font-family="{theme.font_sans}">'
         f"<defs>{defs}</defs>"
         f'<rect width="{W}" height="{H}" fill="{_bg_fill(theme, grad_id)}"/>'
-        f"{''.join(body)}{footer}</svg>"
+        f"{''.join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>"
     )

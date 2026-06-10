@@ -53,5 +53,8 @@
       "button": "Follow for more",
       "handle": "@buildnotes"
     }
-  ]
+  ],
+  "brand": null,
+  "caption": "",
+  "hashtags": []
 }
