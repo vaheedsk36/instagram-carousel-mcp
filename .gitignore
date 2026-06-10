@@ -1,0 +1,11 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Generated carousels — keep the committed sample, ignore the rest
+output/*
+!output/sample/
+
+# OS
+.DS_Store

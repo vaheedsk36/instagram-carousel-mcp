@@ -1,0 +1,33 @@
+"""Smoke test: render a sample carousel covering every template."""
+import server
+
+slides = [
+    {"template": "title", "eyebrow": "Playbook",
+     "heading": "5 ways to ship faster without breaking things",
+     "subheading": "A field-tested guide for small teams", "handle": "@buildnotes"},
+    {"template": "content", "eyebrow": "Why it matters",
+     "heading": "Speed compounds",
+     "body": "Every day you save shipping a feature is a day of real user feedback. "
+             "Teams that ship weekly learn 4x faster than teams that ship monthly.",
+     "handle": "@buildnotes"},
+    {"template": "list", "eyebrow": "The framework", "heading": "The 5 moves", "ordered": True,
+     "items": ["Cut scope before you cut corners",
+               "Ship behind a flag, always",
+               "Automate the boring path to prod",
+               "Review small, review often",
+               "Measure, then decide"],
+     "handle": "@buildnotes"},
+    {"template": "quote",
+     "quote": "If it hurts, do it more often. Bring the pain forward.",
+     "author": "Martin Fowler", "role": "on continuous delivery", "handle": "@buildnotes"},
+    {"template": "stat", "label": "Deploy frequency", "value": "4x",
+     "caption": "Elite teams deploy on-demand, multiple times per day.",
+     "handle": "@buildnotes"},
+    {"template": "cta", "eyebrow": "Your turn",
+     "heading": "Which move will you try this week?",
+     "body": "Save this for your next sprint planning.",
+     "button": "Follow for more", "handle": "@buildnotes"},
+]
+
+res = server._render_all("sample", "Ship Faster", "midnight", "portrait", slides)
+print("OK:", res)

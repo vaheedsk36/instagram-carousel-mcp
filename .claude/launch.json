@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "carousel-preview",
+      "runtimeExecutable": "./.venv/bin/python",
+      "runtimeArgs": ["-m", "http.server", "8745", "--bind", "127.0.0.1", "--directory", "output/sample"],
+      "port": 8745
+    }
+  ]
+}
