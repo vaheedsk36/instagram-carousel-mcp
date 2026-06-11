@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -93,9 +94,22 @@ def _from_replicate(query: str, w: int, h: int) -> tuple[bytes, str] | None:
         "num_outputs": 1,
         "go_fast": True,
     }}
-    pred = _post_json(
-        "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
-        payload, hdr, timeout=90)
+    url = "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions"
+    pred = None
+    for attempt in range(5):
+        try:
+            pred = _post_json(url, payload, hdr, timeout=90)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 4:
+                retry_after = e.headers.get("Retry-After")
+                wait = int(retry_after) if retry_after and retry_after.isdigit() else 4 * (attempt + 1)
+                print(f"[images] replicate 429, retrying in {wait}s", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            raise
+    if pred is None:
+        return None
     # With Prefer: wait the prediction usually completes; poll briefly otherwise.
     get_url = (pred.get("urls") or {}).get("get")
     for _ in range(20):
