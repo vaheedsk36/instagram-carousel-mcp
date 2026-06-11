@@ -19,6 +19,7 @@ upload. Pure-Python, no system image libraries required.
 | Tool | Purpose |
 |------|---------|
 | `list_themes` | List available themes with colours. |
+| `trending_topics` | Find recent/trending news headlines for a subject (Google News, no key) to pick a timely angle. |
 | `create_carousel` | Build a carousel from slide specs; writes SVGs + preview. Accepts `brand`, `caption`, `hashtags`. Returns `preview_url`. |
 | `update_slide` | Replace one slide (by index) and re-render. |
 | `add_slide` | Insert/append a slide. |

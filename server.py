@@ -26,6 +26,7 @@ from mcp.server.fastmcp import FastMCP
 
 from carousel import brand as brand_mod
 from carousel import export as export_mod
+from carousel import news as news_mod
 from carousel import preview as preview_mod
 from carousel import render as render_mod
 from carousel.themes import get_theme, list_themes as _list_themes
@@ -102,6 +103,23 @@ def _render_all(carousel_id: str, title: str, theme_name: str | None, size: str,
 def list_themes() -> list[dict]:
     """List available visual themes (name, description, colours)."""
     return _list_themes()
+
+
+@mcp.tool()
+def trending_topics(query: str, limit: int = 10, days: int = 7) -> list[dict]:
+    """Find recent/trending news headlines for a topic (Google News, no API key).
+
+    Use this to discover a timely angle before building a carousel: fetch
+    headlines for the subject, pick the most compelling/relevant story, then
+    research it and call create_carousel. Each result has title, source,
+    published date, and link.
+
+    Args:
+        query: the subject to search news for, e.g. "AI agents", "fitness".
+        limit: max headlines to return (default 10).
+        days: only include items from the last N days (default 7; 0 = no limit).
+    """
+    return news_mod.trending(query, limit=limit, days=days)
 
 
 @mcp.tool()
