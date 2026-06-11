@@ -292,10 +292,42 @@ document.getElementById('dlAll').onclick = async () => {
 };
 
 document.getElementById('copyCap').onclick = async () => {
-  await navigator.clipboard.writeText(document.getElementById('captionText').textContent);
+  const el = document.getElementById('captionText');
+  const text = el.textContent;
   const b = document.getElementById('copyCap');
-  b.textContent = 'Copied ✓';
-  setTimeout(() => b.textContent = 'Copy', 1500);
+  let ok = false;
+
+  // 1) Clipboard API (best, but rejects if the page isn't focused).
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (e) { /* fall through */ }
+
+  // 2) Hidden textarea + execCommand fallback.
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch (e) { /* fall through */ }
+  }
+
+  // 3) Last resort: select the caption so the user can press Cmd/Ctrl+C.
+  if (!ok) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+  }
+
+  b.textContent = ok ? 'Copied ✓' : 'Selected — press ⌘C';
+  setTimeout(() => b.textContent = 'Copy', 2200);
 };
 
 load();
