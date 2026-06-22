@@ -82,10 +82,19 @@ def _aspect_ratio(w: int, h: int) -> str:
 
 # ---- providers -------------------------------------------------------------
 
+_last_replicate_call = [0.0]  # module-level throttle state
+_MIN_REPLICATE_GAP = 4.0      # seconds between create calls to avoid 429s
+
+
 def _from_replicate(query: str, w: int, h: int) -> tuple[bytes, str] | None:
     token = replicate_token()
     if not token:
         return None
+    # Throttle: space out create calls to stay under Replicate's rate limit.
+    gap = _MIN_REPLICATE_GAP - (time.time() - _last_replicate_call[0])
+    if gap > 0:
+        time.sleep(gap)
+    _last_replicate_call[0] = time.time()
     hdr = {"Authorization": f"Bearer {token}", "Prefer": "wait"}
     payload = {"input": {
         "prompt": query,
