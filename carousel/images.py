@@ -189,30 +189,59 @@ def _wiki_portrait(name: str) -> tuple[bytes, str] | None:
     return _get(src, timeout=45)
 
 
+def _wiki_article_image(name: str) -> str | None:
+    """The lead image of a company's Wikipedia article (often the real logo)."""
+    for title in (name, f"{name} (company)", f"{name} (FinTech company)",
+                  f"{name} (fintech company)", f"{name} Platforms"):
+        try:
+            url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(title.replace(" ", "_"))
+            data, _ = _get(url, timeout=15)
+            j = json.loads(data)
+            src = (j.get("originalimage") or j.get("thumbnail") or {}).get("source")
+            if src:
+                return src
+        except Exception:
+            continue
+    return None
+
+
+def _logo_score(url: str, name: str) -> int:
+    u = url.lower()
+    s = (3 if "logo" in u else 0) + (2 if name.split()[0].lower() in u else 0)
+    for bad in ("hq", "building", "headquarters", "campus", "_ai_", "ai_logo",
+                "ring_only", "icon", "app_icon", "map", "photo", "office"):
+        if bad in u:
+            s -= 4
+    return s
+
+
 def _commons_logo(name: str) -> tuple[bytes, str] | None:
-    """Fetch an official company logo from Wikimedia Commons (rendered to PNG)."""
-    api = ("https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search"
-           f"&gsrsearch={urllib.parse.quote(name + ' logo')}&gsrnamespace=6&gsrlimit=8"
-           "&prop=imageinfo&iiprop=url|mime&iiurlwidth=600")
-    data, _ = _get(api, timeout=20)
-    pages = list(((json.loads(data).get("query") or {}).get("pages") or {}).values())
+    """Find the official company logo, scoring candidates from both the
+    Wikipedia article lead image and Commons search so ambiguous names
+    (e.g. 'CRED') resolve to the real wordmark, not a stray file."""
+    candidates: list[tuple[str, int]] = []  # (url, source_bonus)
+    art = _wiki_article_image(name)
+    if art:
+        candidates.append((art, 5))  # the company's own article image is authoritative
+    try:
+        api = ("https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search"
+               f"&gsrsearch={urllib.parse.quote(name + ' logo')}&gsrnamespace=6&gsrlimit=8"
+               "&prop=imageinfo&iiprop=url|mime&iiurlwidth=600")
+        data, _ = _get(api, timeout=20)
+        for p in ((json.loads(data).get("query") or {}).get("pages") or {}).values():
+            ii = (p.get("imageinfo") or [{}])[0]
+            u = ii.get("thumburl") or ii.get("url")
+            if u:
+                candidates.append((u, 0))
+    except Exception:
+        pass
 
-    def score(p):
-        t = (p.get("title") or "").lower()
-        s = (2 if "logo" in t else 0) + (2 if name.split()[0].lower() in t else 0)
-        for bad in (" ai logo", "hq", "building", "ring only", "icon", "headquarters", "campus"):
-            if bad in t:
-                s -= 3
-        return s
-
-    for p in sorted(pages, key=score, reverse=True):
-        ii = (p.get("imageinfo") or [{}])[0]
-        u = ii.get("thumburl") or ii.get("url")
-        if u:
-            try:
-                return _get(u, timeout=40)
-            except Exception:
-                continue
+    ranked = sorted(candidates, key=lambda c: _logo_score(c[0], name) + c[1], reverse=True)
+    for url, _bonus in ranked:
+        try:
+            return _get(url, timeout=40)
+        except Exception:
+            continue
     return None
 
 
