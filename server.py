@@ -147,9 +147,15 @@ def create_carousel(
               background_image: any slide — full-bleed photo behind the content
                   (text auto-switches to light + a scrim keeps it readable).
               image:    on `content` — inline rounded image card above the body.
+              portrait: a real person's name (e.g. "Mark Zuckerberg") — fetches
+                  their actual photo from Wikipedia as a full-bleed background.
               background_query / image_query: a text description — the server
                   auto-sources a fitting image (Replicate/Flux → Pexels →
                   Openverse → Picsum) and embeds it. Zero manual files needed.
+            Policy: for real entities (people, company logos) prefer a source of
+            truth — `portrait` for people, and fetch logos via Wikimedia — and
+            only GENERATE (background_query/image_query) for conceptual/abstract
+            visuals. Never fabricate a real person's face or a brand's logo.
             *_image values may be a local file path, an http(s) URL, or data URI.
             Optional on any slide: handle (e.g. "@brand"), page (bool, show n/total).
         title: human title (also used for the output folder name).

@@ -176,6 +176,67 @@ def _from_picsum(query: str, w: int, h: int) -> tuple[bytes, str]:
     return _get(f"https://picsum.photos/seed/{seed}/{w}/{h}", timeout=25)
 
 
+# ---- source-of-truth providers (real people & logos) ----------------------
+
+def _wiki_portrait(name: str) -> tuple[bytes, str] | None:
+    """Fetch a notable person's portrait from Wikipedia (freely licensed)."""
+    url = "https://en.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(name.replace(" ", "_"))
+    data, _ = _get(url, timeout=20)
+    j = json.loads(data)
+    src = (j.get("originalimage") or j.get("thumbnail") or {}).get("source")
+    if not src:
+        return None
+    return _get(src, timeout=45)
+
+
+def _commons_logo(name: str) -> tuple[bytes, str] | None:
+    """Fetch an official company logo from Wikimedia Commons (rendered to PNG)."""
+    api = ("https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search"
+           f"&gsrsearch={urllib.parse.quote(name + ' logo')}&gsrnamespace=6&gsrlimit=8"
+           "&prop=imageinfo&iiprop=url|mime&iiurlwidth=600")
+    data, _ = _get(api, timeout=20)
+    pages = list(((json.loads(data).get("query") or {}).get("pages") or {}).values())
+
+    def score(p):
+        t = (p.get("title") or "").lower()
+        s = (2 if "logo" in t else 0) + (2 if name.split()[0].lower() in t else 0)
+        for bad in (" ai logo", "hq", "building", "ring only", "icon", "headquarters", "campus"):
+            if bad in t:
+                s -= 3
+        return s
+
+    for p in sorted(pages, key=score, reverse=True):
+        ii = (p.get("imageinfo") or [{}])[0]
+        u = ii.get("thumburl") or ii.get("url")
+        if u:
+            try:
+                return _get(u, timeout=40)
+            except Exception:
+                continue
+    return None
+
+
+def get_real_image(name: str, kind: str) -> Path:
+    """Source-of-truth image for a real entity: kind='portrait' (a person, via
+    Wikipedia) or kind='logo' (a company, via Wikimedia Commons). Cached.
+    Raises if no authoritative image is found (caller decides whether to
+    fall back to generation — we never fake a real person's face or logo)."""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.sha1(f"{kind}:{name}".encode()).hexdigest()[:16]
+    for ext in ("png", "jpg", "jpeg", "webp", "svg"):
+        cached = CACHE / f"{cache_key}.{ext}"
+        if cached.exists():
+            return cached
+    res = _wiki_portrait(name) if kind == "portrait" else _commons_logo(name)
+    if not res:
+        raise RuntimeError(f"No source-of-truth {kind} image for {name!r}")
+    img, mime = res
+    path = CACHE / f"{cache_key}.{_EXT.get(mime, 'png')}"
+    path.write_bytes(img)
+    print(f"[images] real {kind} for {name!r} ({len(img)} bytes)", file=sys.stderr)
+    return path
+
+
 _PROVIDERS = {
     "replicate": _from_replicate,
     "pexels": _from_pexels,

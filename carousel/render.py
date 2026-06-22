@@ -39,6 +39,19 @@ from .themes import Theme
 _ROOT = Path(__file__).parent.parent
 
 
+def _real_uri(kind: str, name: str, w: int, h: int) -> str | None:
+    """Source-of-truth image (real person portrait / company logo) as a data
+    URI. Returns None if no authoritative image exists — we never fabricate a
+    real person's face or a brand's logo."""
+    try:
+        from . import images
+        return to_data_uri(str(images.get_real_image(name, kind)))
+    except Exception as e:  # noqa: BLE001
+        import sys
+        print(f"[render] no source-of-truth {kind} for {name!r}: {e}", file=sys.stderr)
+        return None
+
+
 def _sourced_uri(query: str, w: int, h: int) -> str | None:
     """Auto-source an image for a text query and return it as a data URI.
 
@@ -224,6 +237,8 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
     # Full-bleed background photo: embed, add a dark scrim, and switch text to
     # light so any template stays readable on top of the image.
     bg_uri = to_data_uri(slide.get("background_image"))
+    if not bg_uri and slide.get("portrait"):
+        bg_uri = _real_uri("portrait", slide["portrait"], W, H)
     if not bg_uri and slide.get("background_query"):
         bg_uri = _sourced_uri(slide["background_query"], W, H)
     bg_layer = ""
