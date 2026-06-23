@@ -76,6 +76,72 @@ def write_index(carousel_dir: Path) -> None:
     (carousel_dir / "index.html").write_text(_INDEX_HTML)
 
 
+def write_reel_index(reel_dir: Path, title: str, caption: str,
+                     duration: float, video: str = "reel.mp4") -> None:
+    html = _REEL_HTML.replace("__TITLE__", _esc(title)) \
+                     .replace("__VIDEO__", video) \
+                     .replace("__DURATION__", f"{duration:g}") \
+                     .replace("__CAPTION__", _esc(caption))
+    (reel_dir / "index.html").write_text(html)
+
+
+def _esc(s: str) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+_REEL_HTML = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>__TITLE__ — Reel</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    gap:16px; padding:28px 16px 40px; background:#0b0d12; color:#e5e7eb;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; }
+  h1 { font-size:16px; font-weight:600; color:#cbd5e1; margin:0; }
+  .meta { font-size:13px; color:#64748b; margin:-8px 0 4px; }
+  video { height:min(78vh,860px); width:auto; border-radius:18px; background:#000;
+    box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  .bar { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .btn { background:#1e293b; color:#e5e7eb; border:1px solid #334155; border-radius:10px;
+    padding:9px 16px; font-size:13px; cursor:pointer; font-weight:600; text-decoration:none; }
+  .btn:hover { background:#334155; }
+  .btn.primary { background:#38bdf8; color:#0b0d12; border-color:#38bdf8; }
+  .caption { width:min(92vw,560px); background:#11151c; border:1px solid #1f2937;
+    border-radius:14px; padding:16px 18px; }
+  .caption-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .caption-head span { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:#64748b; font-weight:700; }
+  .caption pre { margin:0; white-space:pre-wrap; word-break:break-word; font:inherit; font-size:14px; line-height:1.5; color:#cbd5e1; }
+  .caption.empty { display:none; }
+</style></head><body>
+  <h1>__TITLE__</h1>
+  <div class="meta">Reel · 1080×1920 · __DURATION__s</div>
+  <video src="__VIDEO__" controls autoplay loop muted playsinline></video>
+  <div class="bar">
+    <a class="btn primary" href="__VIDEO__" download>Download MP4</a>
+    <button class="btn" id="copyCap">Copy caption</button>
+  </div>
+  <div class="caption" id="caption">
+    <div class="caption-head"><span>Caption</span></div>
+    <pre id="captionText">__CAPTION__</pre>
+  </div>
+<script>
+  if (!document.getElementById('captionText').textContent.trim()) document.getElementById('caption').classList.add('empty');
+  document.getElementById('copyCap').onclick = async () => {
+    const t = document.getElementById('captionText').textContent, b = document.getElementById('copyCap');
+    let ok=false;
+    try { if (navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(t); ok=true; } } catch(e){}
+    if (!ok) { try { const ta=document.createElement('textarea'); ta.value=t; ta.style.cssText='position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); ok=document.execCommand('copy'); ta.remove(); } catch(e){} }
+    if (!ok) { const r=document.createRange(); r.selectNodeContents(document.getElementById('captionText')); const s=getSelection(); s.removeAllRanges(); s.addRange(r); }
+    b.textContent = ok ? 'Copied ✓' : 'Selected — ⌘C'; setTimeout(()=>b.textContent='Copy caption',2000);
+  };
+</script>
+</body></html>
+"""
+
+
 _INDEX_HTML = r"""<!doctype html>
 <html lang="en">
 <head>

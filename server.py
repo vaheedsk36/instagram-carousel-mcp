@@ -139,9 +139,12 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
 
     out_mp4 = reel_dir / "reel.mp4"
     reel_mod.compile_video(pngs, out_mp4, per_scene=per_scene, transition=transition)
+    duration = reel_mod.total_duration(total, per_scene, transition)
 
     full_caption = brand_mod.build_caption(caption, hashtags or [], brand)
     (reel_dir / "caption.txt").write_text(full_caption)
+    preview_mod.write_reel_index(reel_dir, title, full_caption, duration)
+    pv = preview_mod.PreviewServer.ensure(OUTPUT_ROOT)
     (reel_dir / "spec.json").write_text(json.dumps({
         "title": title, "theme": theme_name, "scenes": scenes, "brand": brand_name,
         "caption": caption, "hashtags": hashtags or [], "kind": "reel",
@@ -152,9 +155,10 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         "reel_id": reel_id,
         "scenes": total,
         "dimensions": f"{W}x{H}",
-        "duration_sec": reel_mod.total_duration(total, per_scene, transition),
+        "duration_sec": duration,
         "video": str(out_mp4),
         "directory": str(reel_dir),
+        "preview_url": pv.url_for(reel_id),
         "caption": full_caption,
     }
 
