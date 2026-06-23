@@ -138,14 +138,18 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         bug_png = reel_dir / "bug.png"
         reel_mod.rasterize(reel_dir / "bug.svg", bug_png)
 
+    # Reserve a clear header band so top-aligned text doesn't collide with the bug.
+    inset = 130 if bug_png else 0
+
     total = len(scenes)
     bg_pngs, fg_pngs, configs = [], [], []
     for i, scene in enumerate(scenes):
-        scene.setdefault("page", False)         # page counter looks odd on a reel
-        scene.pop("handle", None)               # branding handled by the bug
+        # Render a copy: no footer handle/page (the bug handles branding), but
+        # leave `scenes` untouched so spec.json round-trips for regeneration.
+        rscene = {**scene, "page": False, "handle": None}
         for lyr, bucket in (("bg", bg_pngs), ("fg", fg_pngs)):
-            svg = render_mod.render_slide(scene, theme, W, H, i, total,
-                                          logo_data_uri=None, layer=lyr)
+            svg = render_mod.render_slide(rscene, theme, W, H, i, total,
+                                          logo_data_uri=None, layer=lyr, top_inset=inset)
             svg_path = reel_dir / f"scene-{i}-{lyr}.svg"
             png_path = reel_dir / f"scene-{i}-{lyr}.png"
             svg_path.write_text(svg)

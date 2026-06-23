@@ -228,9 +228,12 @@ def _logo_svg(logo_data_uri: str | None) -> str:
 
 
 def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: int,
-                 logo_data_uri: str | None = None, layer: str = "full") -> str:
+                 logo_data_uri: str | None = None, layer: str = "full",
+                 top_inset: int = 0) -> str:
     """layer: 'full' (carousel), 'bg' (background+image only, for a Ken-Burns
-    video layer) or 'fg' (transparent text/accent layer that gets animated in)."""
+    video layer) or 'fg' (transparent text/accent layer that gets animated in).
+    top_inset: extra top padding for top-aligned templates (e.g. to clear a
+    persistent brand bug on reels)."""
     template = (slide.get("template") or "content").lower()
     grad_id = f"bg{index}"
     inner_w = W - 2 * PAD
@@ -277,12 +280,12 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
 
     elif template == "quote":
         body.append(
-            f'<text x="{PAD - 6}" y="{PAD + 150}" fill="{theme.accent}" '
+            f'<text x="{PAD - 6}" y="{PAD + 150 + top_inset}" fill="{theme.accent}" '
             f'font-family="{theme.font_serif}" font-size="240" font-weight="700" '
             f'opacity="0.85">&#8220;</text>'
         )
         q_lines = wrap_text(slide.get("quote", ""), 60, inner_w, 0.5)
-        svg, bottom = _text_lines(q_lines, PAD, PAD + 320, size=60, fill=theme.text,
+        svg, bottom = _text_lines(q_lines, PAD, PAD + 320 + top_inset, size=60, fill=theme.text,
                                   weight=500, family=theme.font_serif, line_height=1.3)
         body.append(svg)
         author = slide.get("author")
@@ -317,7 +320,7 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             body.append(svg)
 
     elif template == "list":
-        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0))
+        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0) + top_inset)
         body.append(eb)
         head_lines = wrap_text(slide.get("heading", ""), 64, inner_w, 0.57)
         svg, bottom = _text_lines(head_lines, PAD, y, size=64, fill=theme.text,
@@ -373,7 +376,7 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             )
 
     else:  # "content" (default)
-        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0))
+        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0) + top_inset)
         body.append(eb)
         head_lines = wrap_text(slide.get("heading", ""), 64, inner_w, 0.57)
         svg, bottom = _text_lines(head_lines, PAD, y, size=64, fill=theme.text,
