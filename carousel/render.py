@@ -193,6 +193,41 @@ def _text_lines(
     return svg, bottom
 
 
+def _hl_tokens(highlights: list[str] | None) -> set[str]:
+    toks: set[str] = set()
+    for phrase in (highlights or []):
+        for w in str(phrase).split():
+            toks.add(w.strip(".,!?:;—\"'()").lower())
+    return toks
+
+
+def _rich_text(lines: list[str], anchor_x: float, y: float, *, size: float, fill: str,
+               accent: str, weight: int, family: str, line_height: float = 1.15,
+               anchor: str = "start", highlights: list[str] | None = None) -> tuple[str, float]:
+    """Multi-line text where words matching `highlights` are drawn in `accent`
+    (the signature reel 'highlighted keyword' look). One <text> per line so it
+    works left-aligned or centred. Returns (svg, bottom_y)."""
+    toks = _hl_tokens(highlights)
+    parts = []
+    for i, ln in enumerate(lines):
+        words = [w for w in ln.split(" ") if w != ""]
+        spans = []
+        for j, w in enumerate(words):
+            if j > 0:
+                spans.append('<tspan> </tspan>')
+            norm = w.strip(".,!?:;—\"'()").lower()
+            f = accent if (norm and norm in toks) else fill
+            spans.append(f'<tspan fill="{f}">{esc(w)}</tspan>')
+        ly = y + i * size * line_height
+        parts.append(
+            f'<text x="{anchor_x}" y="{ly:.1f}" fill="{fill}" font-family="{family}" '
+            f'font-size="{size:.0f}" font-weight="{weight}" text-anchor="{anchor}" '
+            f'xml:space="preserve">{"".join(spans)}</text>'
+        )
+    bottom = y + max(0, len(lines) - 1) * size * line_height
+    return "".join(parts), bottom
+
+
 def _footer(slide: dict, theme: Theme, W: int, H: int, index: int, total: int) -> str:
     parts = []
     handle = slide.get("handle")
@@ -234,14 +269,21 @@ def _logo_svg(logo_data_uri: str | None) -> str:
 
 def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: int,
                  logo_data_uri: str | None = None, layer: str = "full",
-                 top_inset: int = 0) -> str:
+                 top_inset: int = 0, text_scale: float = 1.0) -> str:
     """layer: 'full' (carousel), 'bg' (background+image only, for a Ken-Burns
     video layer) or 'fg' (transparent text/accent layer that gets animated in).
     top_inset: extra top padding for top-aligned templates (e.g. to clear a
-    persistent brand bug on reels)."""
+    persistent brand bug on reels).
+    text_scale: multiplies heading/body sizes (reels use bigger, bolder text).
+    Slide field `highlight` (list of words/phrases) renders those words in the
+    accent colour."""
     template = (slide.get("template") or "content").lower()
     grad_id = f"bg{index}"
     inner_w = W - 2 * PAD
+    ts = text_scale
+    hl = slide.get("highlight") or []
+    def S(px: float) -> int:  # scaled font size
+        return max(1, round(px * ts))
     body: list[str] = []
 
     # Full-bleed background photo: embed, add a dark scrim, and switch text to
@@ -266,24 +308,25 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
 
     if template == "title":
         # Vertically centred hero.
-        head_lines = wrap_text(slide.get("heading", ""), 92, inner_w, 0.58)
-        sub_lines = wrap_text(slide.get("subheading", ""), 40, inner_w) if slide.get("subheading") else []
-        block_h = len(head_lines) * 92 * 1.08 + (len(sub_lines) * 40 * 1.35 + 48 if sub_lines else 0)
-        start = (H - block_h) / 2 + 92
+        hs, ss = S(92), S(40)
+        head_lines = wrap_text(slide.get("heading", ""), hs, inner_w, 0.58)
+        sub_lines = wrap_text(slide.get("subheading", ""), ss, inner_w) if slide.get("subheading") else []
+        block_h = len(head_lines) * hs * 1.08 + (len(sub_lines) * ss * 1.35 + 48 if sub_lines else 0)
+        start = (H - block_h) / 2 + hs
         if slide.get("eyebrow"):
-            eb, _ = _text_lines([slide["eyebrow"]], PAD, start - 92 - 8, size=30,
+            eb, _ = _text_lines([slide["eyebrow"]], PAD, start - hs - 8, size=S(30),
                                 fill=theme.accent, weight=700, family=theme.font_sans,
                                 letter_spacing=4, uppercase=True)
             body.append(eb)
-        svg, bottom = _text_lines(head_lines, PAD, start, size=92, fill=theme.text,
-                                  weight=800, family=theme.font_sans, line_height=1.08)
+        svg, bottom = _rich_text(head_lines, PAD, start, size=hs, fill=theme.text,
+                                 accent=theme.accent, weight=800, family=theme.font_sans,
+                                 line_height=1.08, highlights=hl)
         body.append(svg)
         if sub_lines:
-            svg, _ = _text_lines(sub_lines, PAD, bottom + 88, size=40, fill=theme.muted,
+            svg, _ = _text_lines(sub_lines, PAD, bottom + 88, size=ss, fill=theme.muted,
                                  weight=400, family=theme.font_sans, line_height=1.35)
             body.append(svg)
-        # accent rule under eyebrow area
-        body.append(f'<rect x="{PAD}" y="{start - 92 - 56}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
+        body.append(f'<rect x="{PAD}" y="{start - hs - 56}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
 
     elif template == "quote":
         body.append(
@@ -308,22 +351,23 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
 
     elif template == "stat":
         value = str(slide.get("value", ""))
-        v_size = 220 if len(value) <= 4 else (170 if len(value) <= 7 else 120)
+        v_size = S(230 if len(value) <= 4 else (175 if len(value) <= 7 else 125))
+        cap_size = S(40)
         cy = H / 2
         if slide.get("label"):
-            svg, _ = _text_lines([slide["label"]], W / 2, cy - v_size * 0.75, size=34,
+            svg, _ = _text_lines([slide["label"]], W / 2, cy - v_size * 0.75, size=S(36),
                                  fill=theme.accent, weight=700, family=theme.font_sans,
                                  anchor="middle", letter_spacing=4, uppercase=True)
             body.append(svg)
         svg, bottom = _text_lines([value], W / 2, cy + v_size * 0.32, size=v_size,
-                                  fill=theme.text, weight=800, family=theme.font_sans,
+                                  fill=theme.accent, weight=800, family=theme.font_sans,
                                   anchor="middle")
         body.append(svg)
         if slide.get("caption"):
-            cap_lines = wrap_text(slide["caption"], 38, inner_w)
-            svg, _ = _text_lines(cap_lines, W / 2, bottom + 90, size=38, fill=theme.muted,
-                                 weight=400, family=theme.font_sans, anchor="middle",
-                                 line_height=1.35)
+            cap_lines = wrap_text(slide["caption"], cap_size, inner_w)
+            svg, _ = _rich_text(cap_lines, W / 2, bottom + 90, size=cap_size, fill=theme.text,
+                                accent=theme.accent, weight=500, family=theme.font_sans,
+                                anchor="middle", line_height=1.35, highlights=hl)
             body.append(svg)
 
     elif template == "list":
@@ -353,20 +397,22 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             iy = ib + 64
 
     elif template == "cta":
-        cy = H / 2
+        hsz, bsz = S(76), S(38)
+        head_lines = wrap_text(slide.get("heading", ""), hsz, inner_w, 0.57)
+        b_lines = wrap_text(slide["body"], bsz, inner_w) if slide.get("body") else []
+        block_h = len(head_lines) * hsz * 1.1 + (len(b_lines) * bsz * 1.35 + 80 if b_lines else 0)
+        start = (H - block_h) / 2
         if slide.get("eyebrow"):
-            svg, _ = _text_lines([slide["eyebrow"]], W / 2, cy - 200, size=30,
+            svg, _ = _text_lines([slide["eyebrow"]], W / 2, start - 56, size=S(32),
                                  fill=theme.accent, weight=700, family=theme.font_sans,
                                  anchor="middle", letter_spacing=4, uppercase=True)
             body.append(svg)
-        head_lines = wrap_text(slide.get("heading", ""), 72, inner_w, 0.57)
-        svg, bottom = _text_lines(head_lines, W / 2, cy - 80, size=72, fill=theme.text,
-                                  weight=800, family=theme.font_sans, anchor="middle",
-                                  line_height=1.1)
+        svg, bottom = _rich_text(head_lines, W / 2, start + hsz, size=hsz, fill=theme.text,
+                                 accent=theme.accent, weight=800, family=theme.font_sans,
+                                 anchor="middle", line_height=1.1, highlights=hl)
         body.append(svg)
-        if slide.get("body"):
-            b_lines = wrap_text(slide["body"], 38, inner_w)
-            svg, bottom = _text_lines(b_lines, W / 2, bottom + 80, size=38, fill=theme.muted,
+        if b_lines:
+            svg, bottom = _text_lines(b_lines, W / 2, bottom + 80, size=bsz, fill=theme.muted,
                                       weight=400, family=theme.font_sans, anchor="middle",
                                       line_height=1.35)
             body.append(svg)
@@ -383,11 +429,13 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             )
 
     else:  # "content" (default)
+        hsz = S(64)
         eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0) + top_inset)
         body.append(eb)
-        head_lines = wrap_text(slide.get("heading", ""), 64, inner_w, 0.57)
-        svg, bottom = _text_lines(head_lines, PAD, y, size=64, fill=theme.text,
-                                  weight=800, family=theme.font_sans, line_height=1.12)
+        head_lines = wrap_text(slide.get("heading", ""), hsz, inner_w, 0.57)
+        svg, bottom = _rich_text(head_lines, PAD, y, size=hsz, fill=theme.text,
+                                 accent=theme.accent, weight=800, family=theme.font_sans,
+                                 line_height=1.12, highlights=hl)
         body.append(svg)
         img_uri = to_data_uri(slide.get("image"))
         if not img_uri and slide.get("photo"):  # real photo
@@ -410,9 +458,11 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             body.append(f'<rect x="{PAD}" y="{bottom + 44}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
             text_top = bottom + 130
         if slide.get("body"):
-            b_lines = wrap_text(slide["body"], 40, inner_w)
-            svg, _ = _text_lines(b_lines, PAD, text_top, size=40, fill=theme.text,
-                                 weight=400, family=theme.font_sans, line_height=1.42)
+            bsz = S(40)
+            b_lines = wrap_text(slide["body"], bsz, inner_w)
+            svg, _ = _rich_text(b_lines, PAD, text_top, size=bsz, fill=theme.text,
+                                accent=theme.accent, weight=400, family=theme.font_sans,
+                                line_height=1.42, highlights=hl)
             body.append(svg)
 
     defs = _gradient_defs(theme, grad_id)
