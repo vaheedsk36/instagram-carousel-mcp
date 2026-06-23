@@ -269,7 +269,7 @@ def _logo_svg(logo_data_uri: str | None) -> str:
 
 def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: int,
                  logo_data_uri: str | None = None, layer: str = "full",
-                 top_inset: int = 0, text_scale: float = 1.0) -> str:
+                 top_inset: int = 0, text_scale: float = 1.0, vcenter: bool = False) -> str:
     """layer: 'full' (carousel), 'bg' (background+image only, for a Ken-Burns
     video layer) or 'fg' (transparent text/accent layer that gets animated in).
     top_inset: extra top padding for top-aligned templates (e.g. to clear a
@@ -429,41 +429,67 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             )
 
     else:  # "content" (default)
-        hsz = S(64)
-        eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0) + top_inset)
-        body.append(eb)
-        head_lines = wrap_text(slide.get("heading", ""), hsz, inner_w, 0.57)
-        svg, bottom = _rich_text(head_lines, PAD, y, size=hsz, fill=theme.text,
-                                 accent=theme.accent, weight=800, family=theme.font_sans,
-                                 line_height=1.12, highlights=hl)
-        body.append(svg)
+        hsz, bsz, ebsz = S(64), S(42), S(32)
         img_uri = to_data_uri(slide.get("image"))
-        if not img_uri and slide.get("photo"):  # real photo
+        if not img_uri and slide.get("photo"):
             img_uri = _sourced_uri(slide["photo"], 1200, 800, providers=_PHOTO_PROVIDERS)
-        if not img_uri and slide.get("image_query"):  # AI-generated
+        if not img_uri and slide.get("image_query"):
             img_uri = _sourced_uri(slide["image_query"], 1200, 800)
-        if img_uri:
-            # Rounded image card between heading and body.
-            iy = bottom + 56
-            ih = min(560, H - iy - PAD - 220)
-            body.append(
-                f'<clipPath id="imgclip{index}"><rect x="{PAD}" y="{iy:.0f}" '
-                f'width="{inner_w}" height="{ih:.0f}" rx="28"/></clipPath>'
-                f'<image x="{PAD}" y="{iy:.0f}" width="{inner_w}" height="{ih:.0f}" '
-                f'preserveAspectRatio="xMidYMid slice" clip-path="url(#imgclip{index})" '
-                f'href="{img_uri}"/>'
-            )
-            text_top = iy + ih + 64
-        else:
-            body.append(f'<rect x="{PAD}" y="{bottom + 44}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
-            text_top = bottom + 130
-        if slide.get("body"):
-            bsz = S(40)
-            b_lines = wrap_text(slide["body"], bsz, inner_w)
-            svg, _ = _rich_text(b_lines, PAD, text_top, size=bsz, fill=theme.text,
-                                accent=theme.accent, weight=400, family=theme.font_sans,
-                                line_height=1.42, highlights=hl)
+        eb_text = slide.get("eyebrow")
+        head_lines = wrap_text(slide.get("heading", ""), hsz, inner_w, 0.57)
+        b_lines = wrap_text(slide["body"], bsz, inner_w) if slide.get("body") else []
+
+        if vcenter and not img_uri:
+            # Reel: center the whole eyebrow+heading+body block vertically so the
+            # frame reads full, not top-floated with an empty bottom.
+            lh_h, lh_b = 1.16, 1.46
+            eb_h = (ebsz + 46) if eb_text else 0
+            head_h = len(head_lines) * hsz * lh_h
+            gap_hb = 64 if b_lines else 0
+            body_h = len(b_lines) * bsz * lh_b if b_lines else 0
+            cur = (H - (eb_h + head_h + gap_hb + body_h)) / 2
+            if eb_text:
+                svg, _ = _text_lines([eb_text], PAD, cur + ebsz, size=ebsz, fill=theme.accent,
+                                     weight=700, family=theme.font_sans, letter_spacing=4, uppercase=True)
+                body.append(svg)
+                cur += eb_h
+            svg, _ = _rich_text(head_lines, PAD, cur + hsz * 0.85, size=hsz, fill=theme.text,
+                                accent=theme.accent, weight=800, family=theme.font_sans,
+                                line_height=lh_h, highlights=hl)
             body.append(svg)
+            body.append(f'<rect x="{PAD}" y="{cur + head_h + 8:.0f}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
+            cur += head_h + gap_hb
+            if b_lines:
+                svg, _ = _rich_text(b_lines, PAD, cur + bsz * 0.85, size=bsz, fill=theme.text,
+                                    accent=theme.accent, weight=400, family=theme.font_sans,
+                                    line_height=lh_b, highlights=hl)
+                body.append(svg)
+        else:
+            eb, y = _eyebrow(slide, theme, PAD + 30 + (96 if logo_data_uri else 0) + top_inset)
+            body.append(eb)
+            svg, bottom = _rich_text(head_lines, PAD, y, size=hsz, fill=theme.text,
+                                     accent=theme.accent, weight=800, family=theme.font_sans,
+                                     line_height=1.12, highlights=hl)
+            body.append(svg)
+            if img_uri:
+                iy = bottom + 56
+                ih = min(560, H - iy - PAD - 220)
+                body.append(
+                    f'<clipPath id="imgclip{index}"><rect x="{PAD}" y="{iy:.0f}" '
+                    f'width="{inner_w}" height="{ih:.0f}" rx="28"/></clipPath>'
+                    f'<image x="{PAD}" y="{iy:.0f}" width="{inner_w}" height="{ih:.0f}" '
+                    f'preserveAspectRatio="xMidYMid slice" clip-path="url(#imgclip{index})" '
+                    f'href="{img_uri}"/>'
+                )
+                text_top = iy + ih + 64
+            else:
+                body.append(f'<rect x="{PAD}" y="{bottom + 44}" width="72" height="6" rx="3" fill="{theme.accent}"/>')
+                text_top = bottom + 130
+            if b_lines:
+                svg, _ = _rich_text(b_lines, PAD, text_top, size=bsz, fill=theme.text,
+                                    accent=theme.accent, weight=400, family=theme.font_sans,
+                                    line_height=1.42, highlights=hl)
+                body.append(svg)
 
     defs = _gradient_defs(theme, grad_id)
     if bg_uri:

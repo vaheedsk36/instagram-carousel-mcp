@@ -151,7 +151,7 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         for lyr, bucket in (("bg", bg_pngs), ("fg", fg_pngs)):
             svg = render_mod.render_slide(rscene, theme, W, H, i, total,
                                           logo_data_uri=None, layer=lyr, top_inset=inset,
-                                          text_scale=1.18)
+                                          text_scale=1.12, vcenter=True)
             svg_path = reel_dir / f"scene-{i}-{lyr}.svg"
             png_path = reel_dir / f"scene-{i}-{lyr}.png"
             svg_path.write_text(svg)
