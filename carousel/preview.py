@@ -118,7 +118,7 @@ _REEL_HTML = r"""<!doctype html>
 </style></head><body>
   <h1>__TITLE__</h1>
   <div class="meta">Reel · 1080×1920 · __DURATION__s</div>
-  <video src="__VIDEO__" controls autoplay loop muted playsinline></video>
+  <video id="reelVideo" controls autoplay loop muted playsinline></video>
   <div class="bar">
     <a class="btn primary" href="__VIDEO__" download>Download MP4</a>
     <button class="btn" id="copyCap">Copy caption</button>
@@ -128,6 +128,8 @@ _REEL_HTML = r"""<!doctype html>
     <pre id="captionText">__CAPTION__</pre>
   </div>
 <script>
+  // Cache-bust the video so a regenerated reel.mp4 isn't served from cache.
+  (() => { const v=document.getElementById('reelVideo'); v.src='__VIDEO__?t='+Date.now(); })();
   if (!document.getElementById('captionText').textContent.trim()) document.getElementById('caption').classList.add('empty');
   document.getElementById('copyCap').onclick = async () => {
     const t = document.getElementById('captionText').textContent, b = document.getElementById('copyCap');
