@@ -52,19 +52,24 @@ def _real_uri(kind: str, name: str, w: int, h: int) -> str | None:
         return None
 
 
-def _sourced_uri(query: str, w: int, h: int) -> str | None:
+def _sourced_uri(query: str, w: int, h: int, providers: list[str] | None = None) -> str | None:
     """Auto-source an image for a text query and return it as a data URI.
 
-    Network/provider failures are swallowed (returns None) so a missing image
-    never breaks the whole carousel.
+    `providers` lets the caller force REAL photos (e.g. ["pexels","openverse",
+    "picsum"]) instead of AI generation. Failures are swallowed (returns None)
+    so a missing image never breaks the carousel.
     """
     try:
         from . import images
-        return to_data_uri(str(images.get_image_path(query, w, h)))
+        return to_data_uri(str(images.get_image_path(query, w, h, providers=providers)))
     except Exception as e:  # noqa: BLE001
         import sys
         print(f"[render] image source failed for {query!r}: {e}", file=sys.stderr)
         return None
+
+
+# Real-photo providers (no AI generation) — for news/reporting/real-world scenes.
+_PHOTO_PROVIDERS = ["pexels", "openverse", "picsum"]
 
 
 def to_data_uri(src: str | None) -> str | None:
@@ -244,7 +249,9 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
     bg_uri = to_data_uri(slide.get("background_image"))
     if not bg_uri and slide.get("portrait"):
         bg_uri = _real_uri("portrait", slide["portrait"], W, H)
-    if not bg_uri and slide.get("background_query"):
+    if not bg_uri and slide.get("background_photo"):  # real photo (news/real-world)
+        bg_uri = _sourced_uri(slide["background_photo"], W, H, providers=_PHOTO_PROVIDERS)
+    if not bg_uri and slide.get("background_query"):  # AI-generated (conceptual)
         bg_uri = _sourced_uri(slide["background_query"], W, H)
     bg_layer = ""
     if bg_uri:
@@ -383,7 +390,9 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
                                   weight=800, family=theme.font_sans, line_height=1.12)
         body.append(svg)
         img_uri = to_data_uri(slide.get("image"))
-        if not img_uri and slide.get("image_query"):
+        if not img_uri and slide.get("photo"):  # real photo
+            img_uri = _sourced_uri(slide["photo"], 1200, 800, providers=_PHOTO_PROVIDERS)
+        if not img_uri and slide.get("image_query"):  # AI-generated
             img_uri = _sourced_uri(slide["image_query"], 1200, 800)
         if img_uri:
             # Rounded image card between heading and body.

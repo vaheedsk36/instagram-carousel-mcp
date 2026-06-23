@@ -92,11 +92,12 @@ def list_brands() -> list[dict]:
 
 
 def build_caption(caption: str, hashtags: list[str], brand: Brand | None,
-                  extra_hashtags: list[str] | None = None) -> str:
+                  extra_hashtags: list[str] | None = None,
+                  max_hashtags: int = 5) -> str:
     """Assemble the final post caption: body + signature + hashtag block.
 
-    Brand default hashtags and per-call hashtags are merged (deduped, order
-    preserved). Hashtags get a leading '#' if missing.
+    Per-call hashtags come first, then brand defaults (deduped). Capped to
+    `max_hashtags` (default 5) — a few sharp tags beat a wall of generic ones.
     """
     parts: list[str] = []
     if caption:
@@ -119,5 +120,5 @@ def build_caption(caption: str, hashtags: list[str], brand: Brand | None,
                 seen.add(key)
                 tags.append(t)
     if tags:
-        parts.append(" ".join(tags))
+        parts.append(" ".join(tags[:max_hashtags]))
     return "\n\n".join(parts)

@@ -275,20 +275,25 @@ _PROVIDERS = {
 _DEFAULT_ORDER = ["replicate", "pexels", "openverse", "picsum"]
 
 
-def get_image_path(query: str, w: int, h: int) -> Path:
+def get_image_path(query: str, w: int, h: int, providers: list[str] | None = None) -> Path:
     """Return a cached local image file for `query` at roughly w×h.
 
-    Tries providers in order; Picsum guarantees a result so this rarely raises.
+    `providers` overrides the order — e.g. ["pexels","openverse","picsum"] for a
+    REAL photo (no AI generation). Picsum guarantees a result so this rarely raises.
     """
     CACHE.mkdir(parents=True, exist_ok=True)
-    cache_key = hashlib.sha1(f"{query}|{w}x{h}".encode()).hexdigest()[:16]
+    tag = "+".join(providers) if providers else "auto"
+    cache_key = hashlib.sha1(f"{query}|{w}x{h}|{tag}".encode()).hexdigest()[:16]
     for ext in ("jpg", "png", "jpeg", "webp"):
         cached = CACHE / f"{cache_key}.{ext}"
         if cached.exists():
             return cached
 
-    order = os.environ.get("IMAGE_PROVIDER_ORDER")
-    names = [n.strip() for n in order.split(",")] if order else _DEFAULT_ORDER
+    if providers:
+        names = providers
+    else:
+        order = os.environ.get("IMAGE_PROVIDER_ORDER")
+        names = [n.strip() for n in order.split(",")] if order else _DEFAULT_ORDER
     for name in names:
         prov = _PROVIDERS.get(name)
         if not prov:

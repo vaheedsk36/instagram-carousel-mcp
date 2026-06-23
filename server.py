@@ -103,7 +103,8 @@ def _render_all(carousel_id: str, title: str, theme_name: str | None, size: str,
 def _render_reel(reel_id: str, title: str, theme_name: str | None,
                  scenes: list[dict], *, brand_name: str | None = None,
                  caption: str = "", hashtags: list[str] | None = None,
-                 per_scene: float = 3.2, transition: float = 0.6) -> dict:
+                 per_scene: float = 3.2, transition: float = 0.6,
+                 music: list[str] | None = None, strategy: str = "") -> dict:
     if not scenes:
         raise ValueError("A reel needs at least one scene.")
     if len(scenes) > 12:
@@ -169,14 +170,19 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
     tdurs = [float(c.get("transition_dur") or transition) for c in configs]
     duration = reel_mod.total_duration(durs, tdurs)
 
-    full_caption = brand_mod.build_caption(caption, hashtags or [], brand)
+    full_caption = brand_mod.build_caption(caption, hashtags or [], brand, max_hashtags=5)
     (reel_dir / "caption.txt").write_text(full_caption)
-    preview_mod.write_reel_index(reel_dir, title, full_caption, duration)
+    if music:
+        (reel_dir / "music.txt").write_text("\n".join(music))
+    if strategy:
+        (reel_dir / "strategy.md").write_text(strategy)
+    preview_mod.write_reel_index(reel_dir, title, full_caption, duration, music=music or [])
     pv = preview_mod.PreviewServer.ensure(OUTPUT_ROOT)
     (reel_dir / "spec.json").write_text(json.dumps({
         "title": title, "theme": theme_name, "scenes": scenes, "brand": brand_name,
         "caption": caption, "hashtags": hashtags or [], "kind": "reel",
         "per_scene": per_scene, "transition": transition,
+        "music": music or [], "strategy": strategy,
     }, indent=2))
 
     return {
@@ -188,6 +194,7 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         "directory": str(reel_dir),
         "preview_url": pv.url_for(reel_id),
         "caption": full_caption,
+        "music": music or [],
     }
 
 
@@ -207,12 +214,32 @@ def create_reel(
     hashtags: list[str] | None = None,
     per_scene: float = 3.2,
     transition: float = 0.6,
+    music: list[str] | None = None,
+    strategy: str = "",
 ) -> dict:
     """Create a vertical Instagram Reel (1080x1920 MP4) from text/image scenes.
 
-    Each scene uses the SAME spec as a carousel slide (template + fields, plus
-    background_query/image_query/portrait for visuals) but is rendered at story
-    size and compiled into a video. No audio — add trending audio in the IG app.
+    Build engagement-driven, not generic: open with a scroll-stopping hook,
+    use specific/expert points (numbers, names, a surprising claim) not filler,
+    keep hashtags to <=5 sharp tags, and provide music ideas.
+
+    Each scene uses the SAME spec as a carousel slide (template + fields). For
+    visuals choose the right source per scene:
+      portrait="Name" / logo -> real person/brand (source of truth)
+      background_photo / photo -> a REAL photo (news, reporting, real-world);
+          fetched from stock (Pexels/Openverse), cheaper and truthful
+      background_query / image_query -> AI-GENERATED (conceptual/abstract only)
+    Use real photos for anything factual/newsy; generate only for concepts.
+
+    Per-scene creative controls (tailor to the content — punchy hook vs. a stat
+    that holds): duration, motion ("zoomin"/"zoomout"/"panleft"/"panright"/
+    "none"), transition (any ffmpeg xfade: "fade","slideup","wipeleft",
+    "circleopen","dissolve"...), transition_dur.
+
+    music: 3-5 trending/audio recommendations (track — artist — why it fits),
+        written to music.txt and shown in the preview (IG audio can't be API-set,
+        so the creator adds it in-app).
+    strategy: optional markdown brief (hook, retention plan) saved as strategy.md.
 
     Per-scene creative controls (set on each scene dict; tailor them to the
     content — punchy hook vs. a stat that holds, etc.):
@@ -239,7 +266,8 @@ def create_reel(
     reel_id = _slug(title)
     return _render_reel(reel_id, title, theme, scenes, brand_name=brand,
                         caption=caption, hashtags=hashtags,
-                        per_scene=per_scene, transition=transition)
+                        per_scene=per_scene, transition=transition,
+                        music=music, strategy=strategy)
 
 
 @mcp.tool()

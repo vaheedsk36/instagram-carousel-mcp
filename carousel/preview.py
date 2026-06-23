@@ -77,10 +77,17 @@ def write_index(carousel_dir: Path) -> None:
 
 
 def write_reel_index(reel_dir: Path, title: str, caption: str,
-                     duration: float, video: str = "reel.mp4") -> None:
+                     duration: float, video: str = "reel.mp4",
+                     music: list[str] | None = None) -> None:
+    music_html = ""
+    if music:
+        items = "".join(f"<li>{_esc(m)}</li>" for m in music)
+        music_html = (f'<div class="music"><div class="caption-head"><span>🎵 Music ideas</span></div>'
+                      f'<ul>{items}</ul></div>')
     html = _REEL_HTML.replace("__TITLE__", _esc(title)) \
                      .replace("__VIDEO__", video) \
                      .replace("__DURATION__", f"{duration:g}") \
+                     .replace("__MUSIC__", music_html) \
                      .replace("__CAPTION__", _esc(caption))
     (reel_dir / "index.html").write_text(html)
 
@@ -115,6 +122,9 @@ _REEL_HTML = r"""<!doctype html>
   .caption-head span { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:#64748b; font-weight:700; }
   .caption pre { margin:0; white-space:pre-wrap; word-break:break-word; font:inherit; font-size:14px; line-height:1.5; color:#cbd5e1; }
   .caption.empty { display:none; }
+  .music { width:min(92vw,560px); background:#11151c; border:1px solid #1f2937; border-radius:14px; padding:12px 18px; }
+  .music ul { margin:6px 0 2px; padding-left:18px; }
+  .music li { font-size:14px; line-height:1.6; color:#cbd5e1; }
 </style></head><body>
   <h1>__TITLE__</h1>
   <div class="meta">Reel · 1080×1920 · __DURATION__s</div>
@@ -127,6 +137,7 @@ _REEL_HTML = r"""<!doctype html>
     <div class="caption-head"><span>Caption</span></div>
     <pre id="captionText">__CAPTION__</pre>
   </div>
+  __MUSIC__
 <script>
   // Cache-bust the video so a regenerated reel.mp4 isn't served from cache.
   (() => { const v=document.getElementById('reelVideo'); v.src='__VIDEO__?t='+Date.now(); })();
