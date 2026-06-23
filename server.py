@@ -27,6 +27,7 @@ from mcp.server.fastmcp import FastMCP
 from carousel import brand as brand_mod
 from carousel import export as export_mod
 from carousel import news as news_mod
+from carousel import reel as reel_mod
 from carousel import preview as preview_mod
 from carousel import render as render_mod
 from carousel.themes import get_theme, list_themes as _list_themes
@@ -99,10 +100,106 @@ def _render_all(carousel_id: str, title: str, theme_name: str | None, size: str,
     }
 
 
+def _render_reel(reel_id: str, title: str, theme_name: str | None,
+                 scenes: list[dict], *, brand_name: str | None = None,
+                 caption: str = "", hashtags: list[str] | None = None,
+                 per_scene: float = 3.2, transition: float = 0.6) -> dict:
+    if not scenes:
+        raise ValueError("A reel needs at least one scene.")
+    if len(scenes) > 12:
+        raise ValueError("Keep reels to 12 scenes or fewer.")
+
+    brand = brand_mod.load_brand(brand_name) if brand_name else None
+    if brand:
+        theme = brand.resolve_theme(theme_name)
+        logo_uri = brand.logo_data_uri()
+        if brand.handle:
+            for s in scenes:
+                s.setdefault("handle", brand.handle)
+    else:
+        theme = get_theme(theme_name or "midnight")
+        logo_uri = None
+
+    W, H = render_mod.SIZES["story"]  # reels are always vertical 9:16
+    reel_dir = OUTPUT_ROOT / reel_id
+    reel_dir.mkdir(parents=True, exist_ok=True)
+    for old in list(reel_dir.glob("scene-*.svg")) + list(reel_dir.glob("scene-*.png")):
+        old.unlink()
+
+    total = len(scenes)
+    pngs = []
+    for i, scene in enumerate(scenes):
+        scene.setdefault("page", False)  # page counter looks odd on a reel
+        svg = render_mod.render_slide(scene, theme, W, H, i, total, logo_data_uri=logo_uri)
+        svg_path = reel_dir / f"scene-{i}.svg"
+        png_path = reel_dir / f"scene-{i}.png"
+        svg_path.write_text(svg)
+        reel_mod.rasterize(svg_path, png_path)
+        pngs.append(png_path)
+
+    out_mp4 = reel_dir / "reel.mp4"
+    reel_mod.compile_video(pngs, out_mp4, per_scene=per_scene, transition=transition)
+
+    full_caption = brand_mod.build_caption(caption, hashtags or [], brand)
+    (reel_dir / "caption.txt").write_text(full_caption)
+    (reel_dir / "spec.json").write_text(json.dumps({
+        "title": title, "theme": theme_name, "scenes": scenes, "brand": brand_name,
+        "caption": caption, "hashtags": hashtags or [], "kind": "reel",
+        "per_scene": per_scene, "transition": transition,
+    }, indent=2))
+
+    return {
+        "reel_id": reel_id,
+        "scenes": total,
+        "dimensions": f"{W}x{H}",
+        "duration_sec": reel_mod.total_duration(total, per_scene, transition),
+        "video": str(out_mp4),
+        "directory": str(reel_dir),
+        "caption": full_caption,
+    }
+
+
 @mcp.tool()
 def list_themes() -> list[dict]:
     """List available visual themes (name, description, colours)."""
     return _list_themes()
+
+
+@mcp.tool()
+def create_reel(
+    scenes: list[dict[str, Any]],
+    title: str = "Reel",
+    theme: str | None = None,
+    brand: str | None = None,
+    caption: str = "",
+    hashtags: list[str] | None = None,
+    per_scene: float = 3.2,
+    transition: float = 0.6,
+) -> dict:
+    """Create a vertical Instagram Reel (1080x1920 MP4) from text/image scenes.
+
+    Each scene uses the SAME spec as a carousel slide (template + fields, plus
+    background_query/image_query/portrait for visuals) but is rendered at story
+    size and compiled into a video: a subtle Ken-Burns zoom per scene with
+    crossfades between scenes. No audio — add trending audio in the IG app.
+
+    Args:
+        scenes: list of scene specs (like carousel slides). 3-7 works best.
+        title: used for the output folder/file name.
+        theme: theme name, or omit to use the brand's theme.
+        brand: a saved brand profile (applies theme, logo, @handle, hashtags).
+        caption: the post caption (signature + hashtags appended automatically).
+        hashtags: extra hashtags for this reel.
+        per_scene: seconds each scene is shown (default 3.2).
+        transition: crossfade seconds between scenes (default 0.6).
+
+    Returns the MP4 path, duration, and assembled caption. Requires ffmpeg and
+    rsvg-convert installed.
+    """
+    reel_id = _slug(title)
+    return _render_reel(reel_id, title, theme, scenes, brand_name=brand,
+                        caption=caption, hashtags=hashtags,
+                        per_scene=per_scene, transition=transition)
 
 
 @mcp.tool()

@@ -21,6 +21,7 @@ upload. Pure-Python, no system image libraries required.
 | `list_themes` | List available themes with colours. |
 | `trending_topics` | Find recent/trending news headlines for a subject (Google News, no key) to pick a timely angle. |
 | `create_carousel` | Build a carousel from slide specs; writes SVGs + preview. Accepts `brand`, `caption`, `hashtags`. Returns `preview_url`. |
+| `create_reel` | Compile vertical 9:16 scenes (same specs as slides) into an MP4 Reel — Ken-Burns zoom + crossfades, no audio. Needs ffmpeg + rsvg-convert. |
 | `update_slide` | Replace one slide (by index) and re-render. |
 | `add_slide` | Insert/append a slide. |
 | `save_brand` | Create/update a brand profile (handle, logo, custom theme, default hashtags). |
@@ -77,6 +78,22 @@ base64-embedded so exported PNGs are self-contained. Drop files in `assets/`:
   "image": "https://example.com/chart.png",
   "body": "58% of teams now run hybrid — up from 41% last year." }
 ```
+
+## Reels (vertical video)
+
+`create_reel` turns a list of **scenes** (same spec as carousel slides) into a
+1080×1920 MP4: each scene gets a subtle Ken-Burns zoom and scenes crossfade into
+each other. No baked-in audio — add trending audio in the Instagram app. Brand,
+caption, hashtags, and the image options (`background_query`, `portrait`, etc.)
+all work the same as carousels.
+
+```
+create_reel(scenes=[...], brand="mypage", per_scene=3.2, transition=0.6)
+# -> output/<id>/reel.mp4
+```
+
+Requires `ffmpeg` and `rsvg-convert` (`brew install ffmpeg librsvg`). 3–7 scenes
+works best.
 
 ## Brand your page (theme + logo)
 
