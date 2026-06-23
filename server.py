@@ -127,7 +127,7 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         old.unlink()
 
     total = len(scenes)
-    pngs = []
+    pngs, configs = [], []
     for i, scene in enumerate(scenes):
         scene.setdefault("page", False)  # page counter looks odd on a reel
         svg = render_mod.render_slide(scene, theme, W, H, i, total, logo_data_uri=logo_uri)
@@ -136,10 +136,20 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         svg_path.write_text(svg)
         reel_mod.rasterize(svg_path, png_path)
         pngs.append(png_path)
+        # Per-scene creative controls (the creator picks these per beat).
+        configs.append({
+            "duration": scene.get("duration"),
+            "motion": scene.get("motion"),
+            "transition": scene.get("transition"),
+            "transition_dur": scene.get("transition_dur"),
+        })
 
     out_mp4 = reel_dir / "reel.mp4"
-    reel_mod.compile_video(pngs, out_mp4, per_scene=per_scene, transition=transition)
-    duration = reel_mod.total_duration(total, per_scene, transition)
+    reel_mod.compile_video(pngs, out_mp4, configs=configs,
+                           per_scene=per_scene, transition=transition)
+    durs = [float(c.get("duration") or per_scene) for c in configs]
+    tdurs = [float(c.get("transition_dur") or transition) for c in configs]
+    duration = reel_mod.total_duration(durs, tdurs)
 
     full_caption = brand_mod.build_caption(caption, hashtags or [], brand)
     (reel_dir / "caption.txt").write_text(full_caption)
@@ -184,8 +194,16 @@ def create_reel(
 
     Each scene uses the SAME spec as a carousel slide (template + fields, plus
     background_query/image_query/portrait for visuals) but is rendered at story
-    size and compiled into a video: a subtle Ken-Burns zoom per scene with
-    crossfades between scenes. No audio — add trending audio in the IG app.
+    size and compiled into a video. No audio — add trending audio in the IG app.
+
+    Per-scene creative controls (set on each scene dict; tailor them to the
+    content — punchy hook vs. a stat that holds, etc.):
+        duration: seconds this scene is on screen (e.g. 2.4 hook, 3.6 stat).
+        motion: "zoomin" | "zoomout" | "panleft" | "panright" | "none".
+        transition: the crossfade INTO the next scene — any ffmpeg xfade name,
+            e.g. "fade", "slideleft", "wipeup", "circleopen", "dissolve",
+            "zoomin", "pixelize".
+        transition_dur: seconds for that crossfade (default 0.6).
 
     Args:
         scenes: list of scene specs (like carousel slides). 3-7 works best.
