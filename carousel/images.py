@@ -245,6 +245,19 @@ def _commons_logo(name: str) -> tuple[bytes, str] | None:
     return None
 
 
+def get_favicon(domain: str) -> Path:
+    """Fetch a site's logo/icon (Google favicon service, up to 256px). Keyless,
+    cached. Quality varies — great for some brands, a generic mark for others."""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha1(f"favicon:{domain}".encode()).hexdigest()[:16]
+    cached = CACHE / f"{key}.png"
+    if cached.exists():
+        return cached
+    img, _ = _get(f"https://www.google.com/s2/favicons?domain={domain}&sz=256", timeout=20)
+    cached.write_bytes(img)
+    return cached
+
+
 def get_real_image(name: str, kind: str) -> Path:
     """Source-of-truth image for a real entity: kind='portrait' (a person, via
     Wikipedia) or kind='logo' (a company, via Wikimedia Commons). Cached.

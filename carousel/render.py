@@ -72,6 +72,23 @@ def _sourced_uri(query: str, w: int, h: int, providers: list[str] | None = None)
 _PHOTO_PROVIDERS = ["pexels", "openverse", "picsum"]
 
 
+def _logo_badge_uri(spec: str | None) -> str | None:
+    """Resolve a `logo` spec to a data URI: a domain (-> favicon), an http(s)
+    URL, or a local file path. Use a real brand logo, not a generated one."""
+    if not spec:
+        return None
+    if "://" in spec or "/" in spec or spec.lower().endswith(
+            (".png", ".svg", ".jpg", ".jpeg", ".webp")):
+        return to_data_uri(spec)  # URL or file
+    try:  # bare domain -> favicon
+        from . import images
+        return to_data_uri(str(images.get_favicon(spec)))
+    except Exception as e:  # noqa: BLE001
+        import sys
+        print(f"[render] logo fetch failed for {spec!r}: {e}", file=sys.stderr)
+        return None
+
+
 def to_data_uri(src: str | None) -> str | None:
     """Resolve an image reference to a base64 data URI so it embeds in the SVG.
 
@@ -440,14 +457,24 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
         b_lines = wrap_text(slide["body"], bsz, inner_w) if slide.get("body") else []
 
         if vcenter and not img_uri:
-            # Reel: center the whole eyebrow+heading+body block vertically so the
-            # frame reads full, not top-floated with an empty bottom.
+            # Reel: center the whole [logo +] eyebrow+heading+body block.
+            logo_uri = _logo_badge_uri(slide.get("logo"))
+            badge = 168 if logo_uri else 0
+            badge_gap = 44 if logo_uri else 0
             lh_h, lh_b = 1.16, 1.46
             eb_h = (ebsz + 46) if eb_text else 0
             head_h = len(head_lines) * hsz * lh_h
             gap_hb = 64 if b_lines else 0
             body_h = len(b_lines) * bsz * lh_b if b_lines else 0
-            cur = (H - (eb_h + head_h + gap_hb + body_h)) / 2
+            cur = (H - (badge + badge_gap + eb_h + head_h + gap_hb + body_h)) / 2
+            if logo_uri:
+                # Real brand logo on a clean rounded badge.
+                body.append(
+                    f'<rect x="{PAD}" y="{cur:.0f}" width="{badge}" height="{badge}" rx="36" fill="#ffffff"/>'
+                    f'<image x="{PAD + 22}" y="{cur + 22:.0f}" width="{badge - 44}" height="{badge - 44}" '
+                    f'preserveAspectRatio="xMidYMid meet" href="{logo_uri}"/>'
+                )
+                cur += badge + badge_gap
             if eb_text:
                 svg, _ = _text_lines([eb_text], PAD, cur + ebsz, size=ebsz, fill=theme.accent,
                                      weight=700, family=theme.font_sans, letter_spacing=4, uppercase=True)
