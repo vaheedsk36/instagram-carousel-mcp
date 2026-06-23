@@ -123,20 +123,34 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
     W, H = render_mod.SIZES["story"]  # reels are always vertical 9:16
     reel_dir = OUTPUT_ROOT / reel_id
     reel_dir.mkdir(parents=True, exist_ok=True)
-    for old in list(reel_dir.glob("scene-*.svg")) + list(reel_dir.glob("scene-*.png")):
+    for old in (list(reel_dir.glob("scene-*.svg")) + list(reel_dir.glob("scene-*.png"))
+                + list(reel_dir.glob("bug.*"))):
         old.unlink()
 
+    # Channel brand bug (persistent watermark): brand handle/logo, else a
+    # handle set on the scenes.
+    bug_handle = brand.handle if brand and brand.handle else next(
+        (s["handle"] for s in scenes if s.get("handle")), "")
+    bug_png = None
+    if bug_handle or logo_uri:
+        bug_svg = render_mod.render_brand_bug(theme, bug_handle, logo_uri, W, H)
+        (reel_dir / "bug.svg").write_text(bug_svg)
+        bug_png = reel_dir / "bug.png"
+        reel_mod.rasterize(reel_dir / "bug.svg", bug_png)
+
     total = len(scenes)
-    pngs, configs = [], []
+    bg_pngs, fg_pngs, configs = [], [], []
     for i, scene in enumerate(scenes):
-        scene.setdefault("page", False)  # page counter looks odd on a reel
-        svg = render_mod.render_slide(scene, theme, W, H, i, total, logo_data_uri=logo_uri)
-        svg_path = reel_dir / f"scene-{i}.svg"
-        png_path = reel_dir / f"scene-{i}.png"
-        svg_path.write_text(svg)
-        reel_mod.rasterize(svg_path, png_path)
-        pngs.append(png_path)
-        # Per-scene creative controls (the creator picks these per beat).
+        scene.setdefault("page", False)         # page counter looks odd on a reel
+        scene.pop("handle", None)               # branding handled by the bug
+        for lyr, bucket in (("bg", bg_pngs), ("fg", fg_pngs)):
+            svg = render_mod.render_slide(scene, theme, W, H, i, total,
+                                          logo_data_uri=None, layer=lyr)
+            svg_path = reel_dir / f"scene-{i}-{lyr}.svg"
+            png_path = reel_dir / f"scene-{i}-{lyr}.png"
+            svg_path.write_text(svg)
+            reel_mod.rasterize(svg_path, png_path)
+            bucket.append(png_path)
         configs.append({
             "duration": scene.get("duration"),
             "motion": scene.get("motion"),
@@ -145,7 +159,7 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         })
 
     out_mp4 = reel_dir / "reel.mp4"
-    reel_mod.compile_video(pngs, out_mp4, configs=configs,
+    reel_mod.compile_video(bg_pngs, fg_pngs, out_mp4, configs=configs, bug_path=bug_png,
                            per_scene=per_scene, transition=transition)
     durs = [float(c.get("duration") or per_scene) for c in configs]
     tdurs = [float(c.get("transition_dur") or transition) for c in configs]

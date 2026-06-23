@@ -228,7 +228,9 @@ def _logo_svg(logo_data_uri: str | None) -> str:
 
 
 def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: int,
-                 logo_data_uri: str | None = None) -> str:
+                 logo_data_uri: str | None = None, layer: str = "full") -> str:
+    """layer: 'full' (carousel), 'bg' (background+image only, for a Ken-Burns
+    video layer) or 'fg' (transparent text/accent layer that gets animated in)."""
     template = (slide.get("template") or "content").lower()
     grad_id = f"bg{index}"
     inner_w = W - 2 * PAD
@@ -410,10 +412,48 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
             f"</linearGradient>"
         )
     footer = _footer(slide, theme, W, H, index, total)
+    open_tag = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+                f'viewBox="0 0 {W} {H}" font-family="{theme.font_sans}">')
+    if layer == "bg":
+        # Just the painted background + photo/scrim — gets a Ken-Burns zoom.
+        return (f'{open_tag}<defs>{defs}</defs>'
+                f'<rect width="{W}" height="{H}" fill="{_bg_fill(theme, grad_id)}"/>'
+                f"{bg_layer}</svg>")
+    if layer == "fg":
+        # Transparent text/accent layer — animated in over the background.
+        return f'{open_tag}{"".join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>'
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
-        f'viewBox="0 0 {W} {H}" font-family="{theme.font_sans}">'
-        f"<defs>{defs}</defs>"
+        f"{open_tag}<defs>{defs}</defs>"
         f'<rect width="{W}" height="{H}" fill="{_bg_fill(theme, grad_id)}"/>'
         f"{bg_layer}{''.join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>"
     )
+
+
+def render_brand_bug(theme: Theme, handle: str, logo_data_uri: str | None,
+                     W: int, H: int) -> str:
+    """A persistent channel watermark (logo + @handle) as a full-frame
+    transparent overlay — pinned top-left, on a subtle dark pill for legibility
+    over any scene."""
+    items = []
+    x = 56
+    pill_x, pill_y, pill_h = 48, 56, 84
+    cx = pill_x + 24
+    has_logo = bool(logo_data_uri)
+    if has_logo:
+        items.append(f'<image x="{cx}" y="{pill_y + 14}" width="120" height="56" '
+                     f'preserveAspectRatio="xMinYMid meet" href="{logo_data_uri}"/>')
+        cx += 136
+    text = handle or ""
+    text_w = int(len(text) * 19) if text else 0
+    if text:
+        items.append(f'<text x="{cx}" y="{pill_y + 54}" fill="#ffffff" '
+                     f'font-family="{theme.font_sans}" font-size="34" font-weight="700">'
+                     f'{esc(text)}</text>')
+    pill_w = (cx - pill_x) + text_w + 36
+    pill = (f'<rect x="{pill_x}" y="{pill_y}" width="{pill_w}" height="{pill_h}" '
+            f'rx="42" fill="#000000" opacity="0.32"/>')
+    accent_dot = (f'<circle cx="{pill_x + pill_w - 22}" cy="{pill_y + pill_h/2:.0f}" '
+                  f'r="7" fill="{theme.accent}"/>') if text else ""
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+            f'viewBox="0 0 {W} {H}" font-family="{theme.font_sans}">'
+            f'{pill}{"".join(items)}{accent_dot}</svg>')

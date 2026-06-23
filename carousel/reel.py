@@ -60,53 +60,72 @@ def _motion_filter(motion: str, frames: int) -> str:
     return f"zoompan=z='min(1.0+{rate:.6f}*on,1.16)':x='{cx}':y='{cy}'"
 
 
-def compile_video(png_paths: list[Path], out_path: Path,
-                  configs: list[dict] | None = None,
+def compile_video(bg_paths: list[Path], fg_paths: list[Path], out_path: Path,
+                  configs: list[dict] | None = None, bug_path: Path | None = None,
                   per_scene: float = 3.2, transition: float = 0.6) -> Path:
-    """Compile PNG scenes into an MP4 with PER-SCENE duration, motion and the
-    transition INTO the next scene.
+    """Compile layered scenes into a Reel MP4.
 
-    configs[i] (all optional): {duration, motion, transition, transition_dur}.
-    `transition`/`transition_dur` on scene i describe the crossfade from scene i
-    to scene i+1 (ignored on the last scene). Falls back to per_scene/transition.
+    Each scene = a background PNG (gets a Ken-Burns zoom) + a transparent
+    foreground PNG (text/accent) that ANIMATES IN (slide-up + fade) over the
+    background — so it reads as a reel, not a panned carousel. An optional
+    brand-bug PNG is overlaid persistently as a channel watermark.
+
+    configs[i] (optional): {duration, motion, transition, transition_dur}.
     """
     ff = _require("ffmpeg")
-    n = len(png_paths)
+    n = len(bg_paths)
     if n == 0:
         raise ValueError("No scenes to compile.")
-    configs = (configs or []) + [{}] * n  # pad
+    configs = (configs or []) + [{}] * n
     durs = [float(configs[i].get("duration") or per_scene) for i in range(n)]
     motions = [str(configs[i].get("motion") or "zoomin") for i in range(n)]
     trans = [str(configs[i].get("transition") or "fade") for i in range(n)]
     tdurs = [float(configs[i].get("transition_dur") or transition) for i in range(n)]
+    total = total_duration(durs, tdurs)
 
     inputs: list[str] = []
-    for p, d in zip(png_paths, durs):
-        inputs += ["-loop", "1", "-t", f"{d}", "-i", str(p)]
+    for i in range(n):
+        inputs += ["-loop", "1", "-t", f"{durs[i]}", "-i", str(bg_paths[i])]
+        inputs += ["-loop", "1", "-t", f"{durs[i]}", "-i", str(fg_paths[i])]
+    if bug_path:
+        inputs += ["-loop", "1", "-t", f"{total}", "-i", str(bug_path)]
+
+    # Slide-up + fade entrance for the foreground (escaped commas for ffmpeg).
+    intro = 0.5
+    yexpr = rf"if(lt(t\,{intro})\,(({intro}-t)/{intro})*80\,0)"
 
     filters: list[str] = []
     for i in range(n):
+        bi, fi = 2 * i, 2 * i + 1
         frames = int(durs[i] * FPS)
         zp = _motion_filter(motions[i], frames)
         filters.append(
-            f"[{i}:v]scale=1620:2880,{zp}:d={frames}:s={W}x{H}:fps={FPS},"
-            f"trim=duration={durs[i]},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{i}]"
+            f"[{bi}:v]scale=1620:2880,{zp}:d={frames}:s={W}x{H}:fps={FPS},"
+            f"trim=duration={durs[i]},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[bg{i}]"
         )
+        filters.append(
+            f"[{fi}:v]scale={W}:{H},fps={FPS},format=rgba,"
+            f"fade=t=in:st=0:d={intro}:alpha=1,trim=duration={durs[i]},setpts=PTS-STARTPTS[fg{i}]"
+        )
+        filters.append(f"[bg{i}][fg{i}]overlay=x=0:y='{yexpr}':format=auto[c{i}]")
 
     if n == 1:
-        last = "[v0]"
+        last = "[c0]"
     else:
-        prev, acc = "[v0]", durs[0]
+        prev, acc = "[c0]", durs[0]
         for i in range(1, n):
             out = f"[x{i}]"
-            td = tdurs[i - 1]  # transition out of the previous scene
-            offset = acc - td
+            td = tdurs[i - 1]
             filters.append(
-                f"{prev}[v{i}]xfade=transition={trans[i-1]}:duration={td}:"
-                f"offset={offset:.3f}{out}"
+                f"{prev}[c{i}]xfade=transition={trans[i-1]}:duration={td}:"
+                f"offset={acc - td:.3f}{out}"
             )
             prev, acc = out, acc + durs[i] - td
         last = prev
+
+    if bug_path:
+        filters.append(f"{last}[{2*n}:v]overlay=x=0:y=0[outv]")
+        last = "[outv]"
 
     cmd = [
         ff, "-y", *inputs,
@@ -118,7 +137,7 @@ def compile_video(png_paths: list[Path], out_path: Path,
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed:\n{proc.stderr[-1800:]}")
+        raise RuntimeError(f"ffmpeg failed:\n{proc.stderr[-2000:]}")
     return out_path
 
 
