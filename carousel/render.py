@@ -523,9 +523,16 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
         defs += (
             f'<linearGradient id="scrim{index}" x1="0" y1="0" x2="0" y2="1">'
             f'<stop offset="0%" stop-color="#000000" stop-opacity="0"/>'
-            f'<stop offset="100%" stop-color="#000000" stop-opacity="0.65"/>'
+            f'<stop offset="100%" stop-color="#000000" stop-opacity="0.7"/>'
             f"</linearGradient>"
         )
+    # Soft dark drop-shadow so text stays legible over any photo/video background
+    # (and so accent-colored highlights don't vanish into same-colored bg).
+    shadow_def = (
+        '<filter id="tsh" x="-20%" y="-20%" width="140%" height="140%">'
+        '<feDropShadow dx="0" dy="2" stdDeviation="7" flood-color="#000000" flood-opacity="0.9"/>'
+        '</filter>'
+    )
     footer = _footer(slide, theme, W, H, index, total)
     open_tag = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
                 f'viewBox="0 0 {W} {H}" font-family="{theme.font_sans}">')
@@ -535,12 +542,15 @@ def render_slide(slide: dict, theme: Theme, W: int, H: int, index: int, total: i
                 f'<rect width="{W}" height="{H}" fill="{_bg_fill(theme, grad_id)}"/>'
                 f"{bg_layer}</svg>")
     if layer == "fg":
-        # Transparent text/accent layer — animated in over the background.
-        return f'{open_tag}{"".join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>'
+        # Transparent text/accent layer (composited over video/image) — always shadowed.
+        return (f'{open_tag}<defs>{shadow_def}</defs>'
+                f'<g filter="url(#tsh)">{"".join(body)}{footer}</g>'
+                f'{_logo_svg(logo_data_uri)}</svg>')
+    text_open = '<g filter="url(#tsh)">' if bg_uri else '<g>'
     return (
-        f"{open_tag}<defs>{defs}</defs>"
+        f"{open_tag}<defs>{defs}{shadow_def if bg_uri else ''}</defs>"
         f'<rect width="{W}" height="{H}" fill="{_bg_fill(theme, grad_id)}"/>'
-        f"{bg_layer}{''.join(body)}{_logo_svg(logo_data_uri)}{footer}</svg>"
+        f"{bg_layer}{text_open}{''.join(body)}{footer}</g>{_logo_svg(logo_data_uri)}</svg>"
     )
 
 
