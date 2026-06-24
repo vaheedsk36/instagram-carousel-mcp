@@ -139,33 +139,49 @@ def _render_reel(reel_id: str, title: str, theme_name: str | None,
         bug_png = reel_dir / "bug.png"
         reel_mod.rasterize(reel_dir / "bug.svg", bug_png)
 
-    # Reserve a clear header band so top-aligned text doesn't collide with the bug.
     inset = 130 if bug_png else 0
+    # Text-protection scrim plate (keeps text legible over any photo/video bg).
+    scrim_png = reel_dir / "scrim.png"
+    reel_mod.make_scrim(scrim_png)
 
     total = len(scenes)
-    bg_pngs, fg_pngs, configs = [], [], []
+    scene_specs, configs = [], []
     for i, scene in enumerate(scenes):
-        # Render a copy: no footer handle/page (the bug handles branding), but
-        # leave `scenes` untouched so spec.json round-trips for regeneration.
+        # Foreground text/accent layer (always a still PNG, animated in).
         rscene = {**scene, "page": False, "handle": None}
-        for lyr, bucket in (("bg", bg_pngs), ("fg", fg_pngs)):
-            svg = render_mod.render_slide(rscene, theme, W, H, i, total,
-                                          logo_data_uri=None, layer=lyr, top_inset=inset,
-                                          text_scale=1.12, vcenter=True)
-            svg_path = reel_dir / f"scene-{i}-{lyr}.svg"
-            png_path = reel_dir / f"scene-{i}-{lyr}.png"
-            svg_path.write_text(svg)
-            reel_mod.rasterize(svg_path, png_path)
-            bucket.append(png_path)
-        configs.append({
-            "duration": scene.get("duration"),
-            "motion": scene.get("motion"),
-            "transition": scene.get("transition"),
-            "transition_dur": scene.get("transition_dur"),
+        fg_svg = render_mod.render_slide(rscene, theme, W, H, i, total,
+                                         logo_data_uri=None, layer="fg", top_inset=inset,
+                                         text_scale=1.12, vcenter=True)
+        (reel_dir / f"scene-{i}-fg.svg").write_text(fg_svg)
+        fg_png = reel_dir / f"scene-{i}-fg.png"
+        reel_mod.rasterize(reel_dir / f"scene-{i}-fg.svg", fg_png)
+
+        # Background: a real video clip (video / video_query) or a Ken-Burns still.
+        is_video = False
+        if scene.get("video"):
+            bg = Path(scene["video"]) if Path(scene["video"]).is_absolute() else (OUTPUT_ROOT.parent / scene["video"])
+            is_video = True
+        elif scene.get("video_query"):
+            from carousel import videos as videos_mod
+            bg = videos_mod.get_video_clip(scene["video_query"],
+                                           duration=float(scene.get("duration") or per_scene), w=W, h=H)
+            is_video = True
+        else:
+            bg_svg = render_mod.render_slide(rscene, theme, W, H, i, total,
+                                             logo_data_uri=None, layer="bg", text_scale=1.12)
+            (reel_dir / f"scene-{i}-bg.svg").write_text(bg_svg)
+            bg = reel_dir / f"scene-{i}-bg.png"
+            reel_mod.rasterize(reel_dir / f"scene-{i}-bg.svg", bg)
+
+        scene_specs.append({
+            "bg": bg, "is_video": is_video, "fg": fg_png,
+            "duration": scene.get("duration"), "motion": scene.get("motion"),
+            "transition": scene.get("transition"), "transition_dur": scene.get("transition_dur"),
         })
+        configs.append(scene_specs[-1])
 
     out_mp4 = reel_dir / "reel.mp4"
-    reel_mod.compile_video(bg_pngs, fg_pngs, out_mp4, configs=configs, bug_path=bug_png,
+    reel_mod.compile_video(scene_specs, out_mp4, bug_path=bug_png, scrim_path=scrim_png,
                            per_scene=per_scene, transition=transition)
     durs = [float(c.get("duration") or per_scene) for c in configs]
     tdurs = [float(c.get("transition_dur") or transition) for c in configs]
@@ -226,11 +242,16 @@ def create_reel(
 
     Each scene uses the SAME spec as a carousel slide (template + fields). For
     visuals choose the right source per scene:
+      video_query="prompt" -> a REAL AI VIDEO clip (Seedance on Replicate) as a
+          moving background. Needs a Replicate token; costs credits (~$0.1-0.2/clip).
+      video="path/url" -> use a provided video clip as the background.
       portrait="Name" / logo -> real person/brand (source of truth)
-      background_photo / photo -> a REAL photo (news, reporting, real-world);
-          fetched from stock (Pexels/Openverse), cheaper and truthful
-      background_query / image_query -> AI-GENERATED (conceptual/abstract only)
-    Use real photos for anything factual/newsy; generate only for concepts.
+      background_photo / photo -> a REAL photo (stock); cheaper and truthful
+      background_query / image_query -> AI-GENERATED still (conceptual/abstract)
+      (none) -> the theme background with a Ken-Burns zoom
+    Use real photos for factual/newsy; video_query for a cinematic moving look;
+    generate stills only for concepts. Text gets a dark scrim + shadow over any
+    background so it stays legible; the brand bug sits in IG's safe zone.
 
     Per-scene creative controls (tailor to the content — punchy hook vs. a stat
     that holds): duration, motion ("zoomin"/"zoomout"/"panleft"/"panright"/

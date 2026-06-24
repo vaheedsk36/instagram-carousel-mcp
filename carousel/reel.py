@@ -60,84 +60,111 @@ def _motion_filter(motion: str, frames: int) -> str:
     return f"zoompan=z='min(1.0+{rate:.6f}*on,1.16)':x='{cx}':y='{cy}'"
 
 
-def compile_video(bg_paths: list[Path], fg_paths: list[Path], out_path: Path,
-                  configs: list[dict] | None = None, bug_path: Path | None = None,
-                  per_scene: float = 3.2, transition: float = 0.6) -> Path:
-    """Compile layered scenes into a Reel MP4.
+_INTRO = 0.5  # text slide-up + fade-in seconds
+_YEXPR = rf"if(lt(t\,{_INTRO})\,(({_INTRO}-t)/{_INTRO})*80\,0)"
 
-    Each scene = a background PNG (gets a Ken-Burns zoom) + a transparent
-    foreground PNG (text/accent) that ANIMATES IN (slide-up + fade) over the
-    background — so it reads as a reel, not a panned carousel. An optional
-    brand-bug PNG is overlaid persistently as a channel watermark.
 
-    configs[i] (optional): {duration, motion, transition, transition_dur}.
-    """
+def make_scrim(path: Path) -> Path:
+    """A reusable text-protection plate: transparent top/bottom, dark centre
+    band, so text stays legible over any photo/video background."""
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+           f'viewBox="0 0 {W} {H}"><defs>'
+           '<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">'
+           '<stop offset="0%" stop-color="#000" stop-opacity="0"/>'
+           '<stop offset="22%" stop-color="#000" stop-opacity="0.62"/>'
+           '<stop offset="78%" stop-color="#000" stop-opacity="0.62"/>'
+           '<stop offset="100%" stop-color="#000" stop-opacity="0"/>'
+           f'</linearGradient></defs><rect width="{W}" height="{H}" fill="url(#g)"/></svg>')
+    svgp = path.with_suffix(".svg")
+    svgp.write_text(svg)
+    subprocess.run([_require("rsvg-convert"), "-w", str(W), "-h", str(H),
+                    str(svgp), "-o", str(path)], check=True, capture_output=True)
+    return path
+
+
+def _composite_scene(bg: Path, is_video: bool, fg: Path, dur: float, motion: str,
+                     out: Path, scrim: Path | None = None, bug: Path | None = None) -> None:
+    """Build one scene clip: background (real video OR Ken-Burns still) ->
+    dark scrim plate -> animated text -> brand bug. Trimmed to `dur`."""
     ff = _require("ffmpeg")
-    n = len(bg_paths)
+    inputs = (["-i", str(bg)] if is_video
+              else ["-loop", "1", "-t", f"{dur}", "-i", str(bg)])
+    idx = 1
+    scr_i = bug_i = None
+    if scrim:
+        inputs += ["-loop", "1", "-t", f"{dur}", "-i", str(scrim)]; scr_i = idx; idx += 1
+    inputs += ["-loop", "1", "-t", f"{dur}", "-i", str(fg)]; fg_i = idx; idx += 1
+    if bug:
+        inputs += ["-loop", "1", "-t", f"{dur}", "-i", str(bug)]; bug_i = idx; idx += 1
+
+    frames = int(dur * FPS)
+    if is_video:  # real clip: dim + slightly desaturate -> backdrop, not subject
+        chain = [f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                 f"eq=brightness=-0.10:saturation=0.85,setsar=1,fps={FPS},"
+                 f"drawbox=x=0:y=0:w=iw:h=ih:color=black@0.40:t=fill,"
+                 f"trim=duration={dur},setpts=PTS-STARTPTS[bg]"]
+    else:  # still: Ken-Burns zoom
+        chain = [f"[0:v]scale=1620:2880,{_motion_filter(motion, frames)}:d={frames}:s={W}x{H}:"
+                 f"fps={FPS},trim=duration={dur},setpts=PTS-STARTPTS,setsar=1[bg]"]
+    cur = "[bg]"
+    if scrim:
+        chain.append(f"[{scr_i}:v]scale={W}:{H},trim=duration={dur},setpts=PTS-STARTPTS[scr]")
+        chain.append(f"{cur}[scr]overlay=0:0[bs]"); cur = "[bs]"
+    chain.append(f"[{fg_i}:v]scale={W}:{H},format=rgba,fade=t=in:st=0:d={_INTRO}:alpha=1,"
+                 f"trim=duration={dur},setpts=PTS-STARTPTS[fg]")
+    chain.append(f"{cur}[fg]overlay=x=0:y='{_YEXPR}'[vf]"); cur = "[vf]"
+    if bug:
+        chain.append(f"{cur}[{bug_i}:v]overlay=0:0[vb]"); cur = "[vb]"
+    cmd = [ff, "-y", *inputs, "-filter_complex", ";".join(chain), "-map", cur,
+           "-t", f"{dur}", "-r", str(FPS), "-an", "-c:v", "libx264", "-preset", "medium",
+           "-crf", "20", "-pix_fmt", "yuv420p", str(out)]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"ffmpeg (scene composite) failed:\n{p.stderr[-1500:]}")
+
+
+def compile_video(scenes: list[dict], out_path: Path, bug_path: Path | None = None,
+                  scrim_path: Path | None = None, per_scene: float = 3.2,
+                  transition: float = 0.6) -> Path:
+    """Compile a Reel MP4 from per-scene specs. Each scene dict:
+        bg (Path), is_video (bool), fg (Path), duration, motion, transition,
+        transition_dur. Backgrounds may be real video clips or Ken-Burns stills;
+        a scrim plate + brand bug are applied to every scene. Scenes are built
+        individually then crossfaded (robust vs. one giant filtergraph)."""
+    n = len(scenes)
     if n == 0:
         raise ValueError("No scenes to compile.")
-    configs = (configs or []) + [{}] * n
-    durs = [float(configs[i].get("duration") or per_scene) for i in range(n)]
-    motions = [str(configs[i].get("motion") or "zoomin") for i in range(n)]
-    trans = [str(configs[i].get("transition") or "fade") for i in range(n)]
-    tdurs = [float(configs[i].get("transition_dur") or transition) for i in range(n)]
-    total = total_duration(durs, tdurs)
+    work = out_path.parent / "_comp"
+    work.mkdir(exist_ok=True)
+    comps, durs, tdurs, trans = [], [], [], []
+    for i, s in enumerate(scenes):
+        D = float(s.get("duration") or per_scene)
+        comp = work / f"comp-{i}.mp4"
+        _composite_scene(s["bg"], bool(s.get("is_video")), s["fg"], D,
+                         str(s.get("motion") or "zoomin"), comp, scrim_path, bug_path)
+        comps.append(comp); durs.append(D)
+        tdurs.append(float(s.get("transition_dur") or transition))
+        trans.append(str(s.get("transition") or "fade"))
 
-    inputs: list[str] = []
-    for i in range(n):
-        inputs += ["-loop", "1", "-t", f"{durs[i]}", "-i", str(bg_paths[i])]
-        inputs += ["-loop", "1", "-t", f"{durs[i]}", "-i", str(fg_paths[i])]
-    if bug_path:
-        inputs += ["-loop", "1", "-t", f"{total}", "-i", str(bug_path)]
-
-    # Slide-up + fade entrance for the foreground (escaped commas for ffmpeg).
-    intro = 0.5
-    yexpr = rf"if(lt(t\,{intro})\,(({intro}-t)/{intro})*80\,0)"
-
-    filters: list[str] = []
-    for i in range(n):
-        bi, fi = 2 * i, 2 * i + 1
-        frames = int(durs[i] * FPS)
-        zp = _motion_filter(motions[i], frames)
-        filters.append(
-            f"[{bi}:v]scale=1620:2880,{zp}:d={frames}:s={W}x{H}:fps={FPS},"
-            f"trim=duration={durs[i]},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[bg{i}]"
-        )
-        filters.append(
-            f"[{fi}:v]scale={W}:{H},fps={FPS},format=rgba,"
-            f"fade=t=in:st=0:d={intro}:alpha=1,trim=duration={durs[i]},setpts=PTS-STARTPTS[fg{i}]"
-        )
-        filters.append(f"[bg{i}][fg{i}]overlay=x=0:y='{yexpr}':format=auto[c{i}]")
-
+    ff = _require("ffmpeg")
+    inputs = []
+    for c in comps:
+        inputs += ["-i", str(c)]
     if n == 1:
-        last = "[c0]"
+        cmd = [ff, "-y", *inputs, "-map", "0:v"]
     else:
-        prev, acc = "[c0]", durs[0]
+        filt, prev, acc = [], "[0:v]", durs[0]
         for i in range(1, n):
-            out = f"[x{i}]"
-            td = tdurs[i - 1]
-            filters.append(
-                f"{prev}[c{i}]xfade=transition={trans[i-1]}:duration={td}:"
-                f"offset={acc - td:.3f}{out}"
-            )
-            prev, acc = out, acc + durs[i] - td
-        last = prev
-
-    if bug_path:
-        filters.append(f"{last}[{2*n}:v]overlay=x=0:y=0[outv]")
-        last = "[outv]"
-
-    cmd = [
-        ff, "-y", *inputs,
-        "-filter_complex", ";".join(filters),
-        "-map", last,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-        str(out_path),
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed:\n{proc.stderr[-2000:]}")
+            o = f"[x{i}]"; td = tdurs[i - 1]
+            filt.append(f"{prev}[{i}:v]xfade=transition={trans[i-1]}:duration={td}:"
+                        f"offset={acc - td:.3f}{o}")
+            prev, acc = o, acc + durs[i] - td
+        cmd = [ff, "-y", *inputs, "-filter_complex", ";".join(filt), "-map", prev]
+    cmd += ["-r", str(FPS), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out_path)]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"ffmpeg (stitch) failed:\n{p.stderr[-1500:]}")
     return out_path
 
 

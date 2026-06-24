@@ -95,6 +95,15 @@ create_reel(scenes=[...], brand="mypage", per_scene=3.2, transition=0.6)
 Requires `ffmpeg` and `rsvg-convert` (`brew install ffmpeg librsvg`). 3–7 scenes
 works best.
 
+**Real-video backgrounds.** A scene can have a moving video background instead of
+a Ken-Burns still:
+- `video_query: "prompt"` — generates a real AI clip (Seedance on Replicate;
+  needs `.replicate_token`, ~$0.10–0.20/clip, cached).
+- `video: "path-or-url"` — use a clip you already have.
+Every scene gets a dark **scrim plate + text drop-shadow** for legibility over
+busy footage, and the brand bug sits in Instagram's safe zone. Backgrounds can
+be mixed per scene (some video, some generated stills, some real photos).
+
 ## Brand your page (theme + logo)
 
 Save a brand profile once, then pass `brand: "<name>"` to `create_carousel` and
