@@ -561,7 +561,9 @@ def render_brand_bug(theme: Theme, handle: str, logo_data_uri: str | None,
     over any scene."""
     items = []
     x = 56
-    pill_x, pill_y, pill_h = 48, 56, 84
+    # y is pushed down into Instagram's safe zone — the very top is covered by
+    # IG's profile/UI overlay and gets clipped on upload.
+    pill_x, pill_y, pill_h = 48, 210, 84
     cx = pill_x + 24
     has_logo = bool(logo_data_uri)
     if has_logo:
