@@ -14,6 +14,82 @@ upload. Pure-Python, no system image libraries required.
 - A live preview page (swipe / arrow keys / dots) that also rasterises each
   slide to PNG **in the browser** — no extra dependencies for export.
 
+## Architecture
+
+Claude (the MCP client) calls the tools; the server renders SVG, sources media
+from a provider chain, and (for reels) rasterises + composites with ffmpeg.
+
+```mermaid
+flowchart TB
+    Client["Claude Code / Desktop<br/>(MCP client)"]
+
+    subgraph Server["server.py — FastMCP (stdio)"]
+      Tools["Tools:<br/>trending_topics · create_carousel · create_reel<br/>save_brand · list_brands · update_slide · add_slide<br/>list_themes · get_preview_url · export_png"]
+    end
+
+    subgraph Core["carousel/ package"]
+      render["render.py<br/>SVG: templates, wrap, highlight,<br/>drop-shadow, logo/image embed, layers"]
+      themes["themes.py<br/>themes + custom brand theme"]
+      brand["brand.py<br/>brand profiles + caption (≤5 tags)"]
+      news["news.py<br/>Google News RSS"]
+      images["images.py<br/>image + logo sourcing"]
+      videos["videos.py<br/>Seedance video clips"]
+      reel["reel.py<br/>rasterize + ffmpeg<br/>scrim · bug · stitch"]
+      preview["preview.py<br/>HTTP preview server + viewer"]
+    end
+
+    subgraph Ext["External (keyless unless noted)"]
+      replicate["Replicate<br/>Flux img + Seedance video<br/>(token)"]
+      pexels["Pexels (key)"]
+      openverse["Openverse / Picsum"]
+      wiki["Wikipedia / Wikimedia"]
+      gnews["Google News RSS"]
+    end
+
+    subgraph Sys["System binaries"]
+      ffmpeg["ffmpeg"]
+      rsvg["rsvg-convert"]
+    end
+
+    Out["output/&lt;id&gt;/<br/>slides.svg · PNGs · reel.mp4<br/>caption.txt · music.txt · index.html"]
+    Browser["Browser / Preview panel"]
+
+    Client <-->|MCP| Tools
+    Tools --> render & brand & news & reel
+    render --> themes & images
+    reel --> render & videos & rsvg & ffmpeg
+    news --> gnews
+    images --> replicate & pexels & openverse & wiki
+    videos --> replicate
+    Tools --> Out
+    Tools --> preview --> Browser
+    Out --> preview
+```
+
+**Image-source policy** (per scene/slide): real entities → `portrait`/logo
+(Wikipedia/Commons); news/real-world → `background_photo` (Pexels→Openverse→
+Picsum); concepts → `background_query` (Flux); motion → `video_query` (Seedance).
+
+<details><summary>Request flow — <code>create_reel</code></summary>
+
+```mermaid
+sequenceDiagram
+    participant C as Claude
+    participant S as create_reel
+    participant R as render.py
+    participant M as images/videos
+    participant F as ffmpeg + rsvg
+    C->>S: scenes + brand + caption + music
+    loop each scene
+      S->>R: render fg text layer (SVG)
+      S->>M: bg → video_query (Seedance) / photo / Flux / still
+      S->>F: rasterize fg; composite bg+scrim+text+bug
+    end
+    S->>F: crossfade-stitch scenes → reel.mp4
+    S->>C: preview_url + caption + music
+```
+</details>
+
 ## Tools
 
 | Tool | Purpose |
